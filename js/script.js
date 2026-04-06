@@ -593,96 +593,253 @@ document.addEventListener('DOMContentLoaded', () => {
 // =====================================================
 
 var MH_WHATSAPP  = (typeof CONFIG !== 'undefined' && CONFIG.whatsapp) ? CONFIG.whatsapp : '260975931621';
-var MH_ADMIN_RATE  = 0.01;    // 1.0%  monthly admin fee (recurring, all employers)
-var MH_ARRANGEMENT = 0.045;   // 4.5%  upfront
-var MH_INSURANCE   = 0.04;    // 4.0%  upfront
-var MH_PROCESSING  = 0.025;   // 2.5%  upfront
-var MH_INS_LEVY    = 0.03;    // 3.0%  of insurance fee
-var MH_CRB         = 35;      // K35   flat CRB fee
+var MH_ADMIN_RATE  = 0.01;
+var MH_ARRANGEMENT = 0.045;
+var MH_INSURANCE   = 0.04;
+var MH_PROCESSING  = 0.025;
+var MH_INS_LEVY    = 0.03;
+var MH_CRB         = 35;
 
-function calculateLoan() {
-    var amountSlider    = document.getElementById('calc-range');
-    var periodSlider    = document.getElementById('calc-period');
-    var employerSelect  = document.getElementById('employer-select');
-    if (!amountSlider || !periodSlider || !employerSelect) return;
+function formatLeadCurrency(value) {
+    return 'K' + Math.round(value || 0).toLocaleString();
+}
 
-    // Get employer-specific rate and max period
-    var opt = employerSelect.options[employerSelect.selectedIndex];
-    var monthlyRate = parseFloat(opt.getAttribute('data-rate')) || 0.0275;
-    var maxMonths = parseInt(opt.getAttribute('data-max')) || 72;
-    var employerName = opt.textContent.trim();
-
-    // Enforce period slider max for employer rules (e.g., G4S max 48)
-    periodSlider.max = maxMonths;
-    if (parseInt(periodSlider.value) > maxMonths) {
-        periodSlider.value = maxMonths;
+function setLeadStatusMessage(message, state) {
+    var statusNode = document.getElementById('lead-capture-status');
+    if (!statusNode) {
+        return;
     }
 
-    var grossAmount = parseFloat(amountSlider.value);
-    var months      = parseInt(periodSlider.value);
-    // Repayment math: standard amortization PMT + monthly admin fee
+    statusNode.textContent = message || '';
+    statusNode.classList.remove('is-error', 'is-success');
+    if (state) {
+        statusNode.classList.add(state);
+    }
+}
+
+function calculateLoanMetrics() {
+    var amountSlider = document.getElementById('calc-range');
+    var periodSlider = document.getElementById('calc-period');
+    var employerSelect = document.getElementById('employer-select');
+    if (!amountSlider || !periodSlider || !employerSelect) {
+        return null;
+    }
+
+    var option = employerSelect.options[employerSelect.selectedIndex];
+    var monthlyRate = parseFloat(option.getAttribute('data-rate')) || 0.0275;
+    var maxMonths = parseInt(option.getAttribute('data-max'), 10) || 72;
+    var employerCode = option.value || 'GRZ';
+    var employerName = option.textContent.trim();
+
+    periodSlider.max = maxMonths;
+    if (parseInt(periodSlider.value, 10) > maxMonths) {
+        periodSlider.value = String(maxMonths);
+    }
+
+    var grossAmount = parseFloat(amountSlider.value) || 0;
+    var months = parseInt(periodSlider.value, 10) || maxMonths;
     var pmt = (grossAmount * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -months));
     var totalMonthly = pmt + (grossAmount * MH_ADMIN_RATE);
-
-    // Deductions math from MFZ schedule
     var deductions = (grossAmount * MH_ARRANGEMENT)
         + (grossAmount * MH_INSURANCE)
         + (grossAmount * MH_PROCESSING)
         + (grossAmount * MH_INSURANCE * MH_INS_LEVY)
         + MH_CRB;
     var cashInHand = grossAmount - deductions;
-    var rateDisplay = (monthlyRate * 100).toFixed(2);
 
-    var amountLabel  = document.getElementById('calc-amount-label');
-    var periodLabel  = document.getElementById('calc-period-label');
-    var resultDisplay = document.getElementById('calc-result');
-    var cashDisplay  = document.getElementById('cash-in-hand');
-    var rateNote     = document.getElementById('calc-rate-note');
-
-    if (amountLabel)   amountLabel.textContent  = 'K' + grossAmount.toLocaleString();
-    if (periodLabel)   periodLabel.textContent  = months + ' Months';
-    if (resultDisplay) resultDisplay.textContent = Math.round(totalMonthly).toLocaleString();
-    if (cashDisplay)   cashDisplay.textContent  = 'K' + Math.round(cashInHand).toLocaleString();
-    if (rateNote)      rateNote.textContent     = employerName.split('(')[0].trim() + ' rate: ' + rateDisplay + '% per month';
+    return {
+        employerCode: employerCode,
+        employerName: employerName,
+        monthlyRate: monthlyRate,
+        maxMonths: maxMonths,
+        grossAmount: grossAmount,
+        months: months,
+        totalMonthly: totalMonthly,
+        cashInHand: cashInHand,
+        affordabilityRate: 0.4
+    };
 }
 
-function checkoutWhatsApp() {
-    var amountSlider   = document.getElementById('calc-range');
-    var periodSlider   = document.getElementById('calc-period');
-    var employerSelect = document.getElementById('employer-select');
-    var monthly        = document.getElementById('calc-result');
-    var cash           = document.getElementById('cash-in-hand');
+function calculateLoan() {
+    var metrics = calculateLoanMetrics();
+    if (!metrics) {
+        return;
+    }
 
-    var amount      = amountSlider   ? parseInt(amountSlider.value)   : 100000;
-    var period      = periodSlider   ? parseInt(periodSlider.value)   : 72;
-    var employer    = employerSelect ? employerSelect.options[employerSelect.selectedIndex].textContent.trim() : 'Not specified';
-    var monthlyText = monthly ? monthly.textContent : 'N/A';
-    var cashText    = cash    ? cash.textContent    : 'N/A';
+    var amountLabel = document.getElementById('calc-amount-label');
+    var periodLabel = document.getElementById('calc-period-label');
+    var resultDisplay = document.getElementById('calc-result');
+    var cashDisplay = document.getElementById('cash-in-hand');
+    var rateNote = document.getElementById('calc-rate-note');
 
-    var message = '*MH FINANCE \u2014 NEW LOAN APPLICATION*\n'
+    if (amountLabel) amountLabel.textContent = formatLeadCurrency(metrics.grossAmount);
+    if (periodLabel) periodLabel.textContent = metrics.months + ' Months';
+    if (resultDisplay) resultDisplay.textContent = Math.round(metrics.totalMonthly).toLocaleString();
+    if (cashDisplay) cashDisplay.textContent = formatLeadCurrency(metrics.cashInHand);
+    if (rateNote) rateNote.textContent = metrics.employerName.split('(')[0].trim() + ' rate: ' + (metrics.monthlyRate * 100).toFixed(2) + '% per month';
+}
+
+function normalizePhoneNumber(value) {
+    var digits = String(value || '').replace(/\D/g, '');
+    if (digits.startsWith('260')) {
+        return digits;
+    }
+    if (digits.startsWith('0')) {
+        return '260' + digits.slice(1);
+    }
+    if (digits.length === 9) {
+        return '260' + digits;
+    }
+    return digits;
+}
+
+function generateLeadId() {
+    return 'MHF-' + Date.now().toString().slice(-8);
+}
+
+function upsertLocalLead(record) {
+    var currentLeads = typeof getLocalLeads === 'function' ? getLocalLeads() : [];
+    var nextLeads = [record].concat(currentLeads.filter(function(existingLead) {
+        return existingLead.leadId !== record.leadId;
+    }));
+
+    if (typeof setLocalLeads === 'function') {
+        setLocalLeads(nextLeads);
+    }
+}
+
+function buildLeadPayload() {
+    var metrics = calculateLoanMetrics();
+    if (!metrics) {
+        return null;
+    }
+
+    var nameInput = document.getElementById('lead-name');
+    var phoneInput = document.getElementById('lead-phone');
+    var salaryInput = document.getElementById('lead-salary');
+    var nrcInput = document.getElementById('lead-nrc');
+    var basicSalary = parseFloat(salaryInput ? salaryInput.value : 0) || 0;
+    var affordabilityLimit = basicSalary * metrics.affordabilityRate;
+
+    return {
+        leadId: generateLeadId(),
+        clientId: typeof CLIENT_ID !== 'undefined' ? CLIENT_ID : 'mh-finance',
+        source: 'Website Calculator',
+        status: 'new',
+        name: nameInput ? nameInput.value.trim() : '',
+        phone: phoneInput ? normalizePhoneNumber(phoneInput.value) : '',
+        basicSalary: basicSalary,
+        nrc: nrcInput ? nrcInput.value.trim().toUpperCase() : '',
+        employer: metrics.employerCode,
+        employerName: metrics.employerName,
+        loanAmount: metrics.grossAmount,
+        months: metrics.months,
+        monthlyRepayment: Number(metrics.totalMonthly.toFixed(2)),
+        cashInHand: Number(metrics.cashInHand.toFixed(2)),
+        affordabilityLimit: Number(affordabilityLimit.toFixed(2)),
+        qualifies: basicSalary > 0 ? metrics.totalMonthly <= affordabilityLimit : false,
+        timestamp: Date.now(),
+        createdAt: new Date().toISOString(),
+        missingDocs: ['Green NRC Copy', 'Payslips', 'Stamped Bank Statement', 'Employer Letter']
+    };
+}
+
+function validateLeadPayload(leadData) {
+    if (!leadData) {
+        return 'Calculator data is unavailable.';
+    }
+    if (!leadData.name) {
+        return 'Enter the client full name before applying.';
+    }
+    if (!leadData.phone || leadData.phone.length < 12) {
+        return 'Enter a valid Zambia mobile number before applying.';
+    }
+    if (!leadData.basicSalary || leadData.basicSalary <= 0) {
+        return 'Enter the client basic salary before applying.';
+    }
+    return '';
+}
+
+async function saveLeadToAdmin(leadData) {
+    upsertLocalLead(leadData);
+
+    var database = typeof getFirebaseDatabase === 'function' ? getFirebaseDatabase() : null;
+    if (!database || typeof FIREBASE_LEADS_PATH === 'undefined') {
+        return { leadId: leadData.leadId, storage: 'local' };
+    }
+
+    var leadRef = database.ref(FIREBASE_LEADS_PATH).push();
+    var persistedLead = Object.assign({}, leadData, { firebaseKey: leadRef.key });
+
+    try {
+        await leadRef.set(persistedLead);
+        upsertLocalLead(persistedLead);
+        return { leadId: persistedLead.leadId, storage: 'firebase' };
+    } catch (error) {
+        console.error('Firebase lead save failed:', error);
+        return { leadId: persistedLead.leadId, storage: 'local' };
+    }
+}
+
+async function checkoutWhatsApp() {
+    var leadData = buildLeadPayload();
+    var validationError = validateLeadPayload(leadData);
+    if (validationError) {
+        setLeadStatusMessage(validationError, 'is-error');
+        return;
+    }
+
+    setLeadStatusMessage('Saving lead before redirecting to WhatsApp...');
+    var saveResult = await saveLeadToAdmin(leadData);
+    setLeadStatusMessage(
+        saveResult.storage === 'firebase'
+            ? 'Lead saved to admin. Opening WhatsApp...'
+            : 'Lead saved locally. Add Firebase keys for live cloud sync.',
+        saveResult.storage === 'firebase' ? 'is-success' : ''
+    );
+
+    var message = '*MH FINANCE - NEW LOAN APPLICATION*\n'
         + '--------------------------\n'
-        + 'Employer: *' + employer + '*\n'
-        + 'Gross Loan: *K' + amount.toLocaleString() + '*\n'
-        + 'Period: *' + period + ' Months*\n'
-        + 'Est. Monthly Repayment: *K' + monthlyText + '*\n'
-        + 'Est. Cash in Hand: *' + cashText + '*\n'
+        + 'Lead ID: *' + leadData.leadId + '*\n'
+        + 'Name: *' + leadData.name + '*\n'
+        + 'Phone: *+' + leadData.phone + '*\n'
+        + (leadData.nrc ? 'NRC: *' + leadData.nrc + '*\n' : '')
+        + 'Employer: *' + leadData.employerName + '*\n'
+        + 'Basic Salary: *' + formatLeadCurrency(leadData.basicSalary) + '*\n'
+        + 'Gross Loan: *' + formatLeadCurrency(leadData.loanAmount) + '*\n'
+        + 'Period: *' + leadData.months + ' Months*\n'
+        + 'Est. Monthly Repayment: *' + formatLeadCurrency(leadData.monthlyRepayment) + '*\n'
+        + 'Est. Cash in Hand: *' + formatLeadCurrency(leadData.cashInHand) + '*\n'
+        + 'Pre-screen: *' + (leadData.qualifies ? 'Within 40% affordability band' : 'Needs review - above 40% affordability band') + '*\n'
         + '--------------------------\n'
         + 'Hello MH Finance, I have used your calculator and would like to proceed with this application. Please advise on the next steps.';
 
     window.open('https://wa.me/' + MH_WHATSAPP + '?text=' + encodeURIComponent(message), '_blank', 'noopener');
 }
 
-// Wire all inputs on load
+window.checkoutWhatsApp = checkoutWhatsApp;
+
 document.addEventListener('DOMContentLoaded', function() {
-    var amountSlider   = document.getElementById('calc-range');
-    var periodSlider   = document.getElementById('calc-period');
+    var amountSlider = document.getElementById('calc-range');
+    var periodSlider = document.getElementById('calc-period');
     var employerSelect = document.getElementById('employer-select');
+    var leadInputs = ['lead-name', 'lead-phone', 'lead-salary', 'lead-nrc'];
+
     if (amountSlider) amountSlider.addEventListener('input', calculateLoan);
     if (periodSlider) periodSlider.addEventListener('input', calculateLoan);
     if (employerSelect) employerSelect.addEventListener('change', calculateLoan);
+
+    leadInputs.forEach(function(inputId) {
+        var input = document.getElementById(inputId);
+        if (input) {
+            input.addEventListener('input', function() {
+                setLeadStatusMessage('');
+            });
+        }
+    });
+
     calculateLoan();
-    console.log('\u2705 MH Finance Multi-Employer Calculator ready.');
+    console.log('MH Finance lead capture ready.');
 });
 
-// Fail-safe: re-run after DOM is fully settled
 setTimeout(calculateLoan, 600);

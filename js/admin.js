@@ -1,552 +1,711 @@
-let inventory = [];
-let editingId = null;
-const categorySeed = [...new Set(inventory.map((item) => item.category).filter(Boolean))];
-if (!Array.isArray(window.categories) || !window.categories.length) {
-    window.categories = categorySeed.length ? categorySeed : ['Nuts', 'Seeds', 'Specialty'];
+// ─── Admin Security Guard ────────────────────────────────────────────────────
+const ADMIN_PASSWORD = "PurpleWorth2026!";
+
+function checkAdminAccess() {
+    const session = localStorage.getItem('mh_admin_access');
+    if (session !== 'granted') {
+        const pass = prompt("🔐 MH Finance Admin — Enter Password:");
+        if (pass === ADMIN_PASSWORD) {
+            localStorage.setItem('mh_admin_access', 'granted');
+        } else {
+            alert("❌ Access Denied. You've been redirected to the homepage.");
+            window.location.href = "index.html";
+        }
+    }
 }
 
-let successPopupTimer = null;
+checkAdminAccess();
 
-function setAuthError(message = '') {
-    const errorTag = document.getElementById('login-error');
-    if (!errorTag) {
+// ─────────────────────────────────────────────────────────────────────────────
+
+const employerRules = {
+    GRZ: { name: 'GRZ Ministries', interest: 0.0275, maxMonths: 72 },
+    ZAF: { name: 'ZAF', interest: 0.0275, maxMonths: 72 },
+    ZNS: { name: 'ZNS', interest: 0.0258, maxMonths: 72 },
+    ARMY: { name: 'Zambia Army', interest: 0.0242, maxMonths: 72 },
+    ZAMTEL: { name: 'ZAMTEL', interest: 0.0258, maxMonths: 72 },
+    G4S: { name: 'G4S', interest: 0.0358, maxMonths: 48 }
+};
+
+const adminFeeRate = 0.01;
+const whatsappNumber = (typeof CONFIG !== 'undefined' && CONFIG.whatsapp) ? CONFIG.whatsapp : '260975931621';
+const sampleLeads = [
+    {
+        leadId: 'MHF-240001',
+        name: 'Luyando Phiri',
+        phone: '260977123456',
+        nrc: '302188/10/1',
+        employer: 'GRZ',
+        basicSalary: 14250,
+        loanAmount: 120000,
+        months: 72,
+        status: 'new',
+        source: 'WhatsApp',
+        createdAt: '2026-04-06T08:15:00.000Z',
+        missingDocs: ['Stamped Bank Statement']
+    },
+    {
+        leadId: 'MHF-240002',
+        name: 'Chola Banda',
+        phone: '260966345678',
+        nrc: '289003/54/1',
+        employer: 'G4S',
+        basicSalary: 5200,
+        loanAmount: 45000,
+        months: 48,
+        status: 'review',
+        source: 'Referral',
+        createdAt: '2026-04-06T09:40:00.000Z',
+        missingDocs: ['Employer Letter', 'Payslip 3']
+    },
+    {
+        leadId: 'MHF-240003',
+        name: 'Mwaka Tembo',
+        phone: '260975456789',
+        nrc: '334521/67/1',
+        employer: 'ZNS',
+        basicSalary: 9800,
+        loanAmount: 70000,
+        months: 60,
+        status: 'pending-docs',
+        source: 'Website',
+        createdAt: '2026-04-06T10:05:00.000Z',
+        missingDocs: ['Green NRC Copy']
+    }
+];
+
+let leadsState = [];
+let currentStatusFilter = 'all';
+let currentSearchTerm = '';
+let currentEmployerFilter = 'all';
+let firebaseLeadsRef = null;
+let currentLeadId = null;
+
+function formatCurrency(value) {
+    return new Intl.NumberFormat('en-ZM', {
+        style: 'currency',
+        currency: 'ZMW',
+        minimumFractionDigits: 2
+    }).format(Number(value) || 0);
+}
+
+function calculateMonthlyRepayment(amount, months, monthlyRate) {
+    const principal = Number(amount) || 0;
+    const duration = Number(months) || 0;
+    if (!principal || !duration || !monthlyRate) {
+        return 0;
+    }
+
+    const pmtBase = (principal * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -duration));
+    return pmtBase + principal * adminFeeRate;
+}
+
+function calculateCashInHand(amount) {
+    const principal = Number(amount) || 0;
+    const arrangementFee = principal * 0.045;
+    const insurance = principal * 0.04;
+    const processingFee = principal * 0.025;
+    const insuranceLevy = insurance * 0.03;
+    const crbFee = 35;
+
+    return principal - arrangementFee - insurance - processingFee - insuranceLevy - crbFee;
+}
+
+function normalizeEmployerCode(value) {
+    const normalized = String(value || '').trim().toUpperCase();
+    if (employerRules[normalized]) {
+        return normalized;
+    }
+    if (normalized.includes('ARMY')) {
+        return 'ARMY';
+    }
+    if (normalized.includes('MINISTR') || normalized.includes('GRZ')) {
+        return 'GRZ';
+    }
+    if (normalized.includes('AIR FORCE') || normalized.includes('ZAF')) {
+        return 'ZAF';
+    }
+    if (normalized.includes('ZNS')) {
+        return 'ZNS';
+    }
+    if (normalized.includes('ZAMTEL')) {
+        return 'ZAMTEL';
+    }
+    if (normalized.includes('G4S')) {
+        return 'G4S';
+    }
+    return 'GRZ';
+}
+
+function normalizeLead(rawLead, key) {
+    const employerCode = normalizeEmployerCode(rawLead.employer || rawLead.employerCode || rawLead.employerName);
+    const employerRule = employerRules[employerCode] || employerRules.GRZ;
+    const months = Math.min(Number(rawLead.months) || employerRule.maxMonths, employerRule.maxMonths);
+    const loanAmount = Number(rawLead.loanAmount || rawLead.grossAmount) || 0;
+    const basicSalary = Number(rawLead.basicSalary || rawLead.salary) || 0;
+    const monthlyRepayment = Number(rawLead.monthlyRepayment) || calculateMonthlyRepayment(loanAmount, months, employerRule.interest);
+    const affordabilityLimit = Number(rawLead.affordabilityLimit) || (basicSalary * 0.4);
+    const qualifies = typeof rawLead.qualifies === 'boolean'
+        ? rawLead.qualifies
+        : (basicSalary > 0 ? monthlyRepayment <= affordabilityLimit : false);
+    const missingDocs = Array.isArray(rawLead.missingDocs) ? rawLead.missingDocs : [];
+
+    return {
+        firebaseKey: rawLead.firebaseKey || key || '',
+        leadId: rawLead.leadId || `MHF-${String(key || Date.now()).slice(-8).toUpperCase()}`,
+        name: rawLead.name || 'Unknown Client',
+        phone: rawLead.phone || '',
+        nrc: rawLead.nrc || '',
+        employer: employerCode,
+        employerName: rawLead.employerName || employerRule.name,
+        basicSalary,
+        loanAmount,
+        months,
+        status: rawLead.status || 'new',
+        source: rawLead.source || 'Website Calculator',
+        createdAt: rawLead.createdAt || new Date(rawLead.timestamp || Date.now()).toISOString(),
+        missingDocs,
+        monthlyRepayment,
+        cashInHand: Number(rawLead.cashInHand) || calculateCashInHand(loanAmount),
+        affordabilityLimit,
+        qualifies,
+        documentPaths: (typeof rawLead.documentPaths === 'object' && rawLead.documentPaths !== null) ? rawLead.documentPaths : {}
+    };
+}
+
+function persistLocalState() {
+    if (typeof setLocalLeads !== 'function') {
         return;
     }
 
-    if (message) {
-        errorTag.textContent = message;
-        errorTag.classList.remove('hidden');
+    setLocalLeads(leadsState.map((lead) => ({
+        firebaseKey: lead.firebaseKey,
+        leadId: lead.leadId,
+        name: lead.name,
+        phone: lead.phone,
+        nrc: lead.nrc,
+        employer: lead.employer,
+        employerName: lead.employerName,
+        basicSalary: lead.basicSalary,
+        loanAmount: lead.loanAmount,
+        months: lead.months,
+        status: lead.status,
+        source: lead.source,
+        createdAt: lead.createdAt,
+        missingDocs: lead.missingDocs,
+        monthlyRepayment: lead.monthlyRepayment,
+        cashInHand: lead.cashInHand,
+        affordabilityLimit: lead.affordabilityLimit,
+        qualifies: lead.qualifies,
+        documentPaths: lead.documentPaths || {}
+    })));
+}
+
+function setCloudStatus(message) {
+    const cloudStatus = document.getElementById('cloud-status');
+    if (cloudStatus) {
+        cloudStatus.textContent = message;
+    }
+}
+
+function hydrateLeads(rawLeads, sourceLabel) {
+    leadsState = rawLeads.map((lead, index) => normalizeLead(lead, lead.firebaseKey || lead.leadId || String(index)))
+        .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt));
+
+    if (!leadsState.length) {
+        const fallbackLocal = typeof getLocalLeads === 'function' ? getLocalLeads() : [];
+        if (fallbackLocal.length) {
+            leadsState = fallbackLocal.map((lead, index) => normalizeLead(lead, lead.firebaseKey || lead.leadId || String(index)));
+            setCloudStatus('Loaded from local backup');
+        } else {
+            leadsState = sampleLeads.map((lead, index) => normalizeLead(lead, String(index)));
+            setCloudStatus(sourceLabel || 'Using sample leads');
+        }
     } else {
-        errorTag.textContent = '';
-        errorTag.classList.add('hidden');
-    }
-}
-
-function showLoginOverlay() {
-    document.getElementById('login-overlay')?.classList.remove('hidden');
-    document.getElementById('admin-dashboard')?.classList.add('hidden');
-}
-
-function showDashboard() {
-    document.getElementById('login-overlay')?.classList.add('hidden');
-    document.getElementById('admin-dashboard')?.classList.remove('hidden');
-    setAuthError('');
-}
-
-async function requireSession() {
-    if (!_supabase || !_supabase.auth) {
-        return true;
+        setCloudStatus(sourceLabel);
     }
 
-    const { data, error } = await _supabase.auth.getSession();
-    if (error || !data?.session) {
-        showLoginOverlay();
-        setAdminStatus('Session required. Please sign in to continue.', 'warning');
-        return false;
-    }
+    persistLocalState();
+    renderAll();
+}
 
+function matchesStatusFilter(lead) {
+    if (currentStatusFilter === 'approved') {
+        return lead.status === 'approved';
+    }
+    if (currentStatusFilter === 'new') {
+        return ['new', 'pending-docs', 'review'].includes(lead.status);
+    }
     return true;
 }
 
-function setAdminStatus(message, tone = 'warning') {
-    const status = document.getElementById('admin-status');
-    if (!status) {
-        return;
+function matchesSearchFilter(lead) {
+    if (!currentSearchTerm) {
+        return true;
     }
+    const haystack = [lead.name, lead.phone, lead.nrc, lead.employerName, lead.leadId, lead.source]
+        .join(' ')
+        .toLowerCase();
+    return haystack.includes(currentSearchTerm);
+}
 
-    const tones = {
-        warning: 'border-amber-200 bg-amber-50 text-amber-900',
-        error: 'border-rose-200 bg-rose-50 text-rose-900',
-        success: 'border-emerald-200 bg-emerald-50 text-emerald-900'
+function matchesEmployerFilter(lead) {
+    return currentEmployerFilter === 'all' || lead.employer === currentEmployerFilter;
+}
+
+function getFilteredLeads() {
+    return leadsState.filter((lead) => matchesStatusFilter(lead) && matchesSearchFilter(lead) && matchesEmployerFilter(lead));
+}
+
+function getStatusMarkup(lead) {
+    const styles = {
+        new: 'bg-sky-500/15 text-sky-300 border-sky-500/20',
+        'pending-docs': 'bg-amber-500/15 text-amber-300 border-amber-500/20',
+        approved: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/20',
+        review: 'bg-rose-500/15 text-rose-300 border-rose-500/20'
     };
 
-    status.className = `rounded-2xl px-4 py-3 text-sm ${tones[tone] || tones.warning}`;
-    status.textContent = message;
+    const labels = {
+        new: 'New Lead',
+        'pending-docs': 'Pending Docs',
+        approved: 'Approved',
+        review: 'Needs Review'
+    };
+
+    const note = lead.qualifies ? 'Within affordability band' : 'Above 40% salary limit';
+
+    return `
+        <div class="space-y-2">
+            <span class="inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-widest ${styles[lead.status] || styles.new}">${labels[lead.status] || labels.new}</span>
+            <p class="text-xs ${lead.qualifies ? 'text-slate-500' : 'text-rose-300 font-bold'}">${note}</p>
+        </div>
+    `;
 }
 
-function showSuccessPopup(message = 'Loan package is now live on MH Finance.') {
-    const popup = document.getElementById('success-popup');
-    const messageTag = document.getElementById('success-popup-message');
-    if (!popup) {
-        return;
-    }
+function renderStats() {
+    const total = leadsState.length;
+    const qualified = leadsState.filter((lead) => lead.qualifies).length;
+    const review = leadsState.filter((lead) => !lead.qualifies).length;
 
-    if (messageTag) {
-        messageTag.textContent = message;
-    }
-
-    popup.classList.remove('hidden');
-    popup.classList.add('flex');
-
-    if (successPopupTimer) {
-        clearTimeout(successPopupTimer);
-    }
-
-    successPopupTimer = setTimeout(() => {
-        closeSuccessPopup();
-    }, 3000);
+    document.getElementById('stat-total').textContent = total;
+    document.getElementById('stat-qualified').textContent = qualified;
+    document.getElementById('stat-review').textContent = review;
+    document.getElementById('engine-summary').textContent = `${review} lead${review === 1 ? '' : 's'} currently flagged for review`;
 }
 
-function closeSuccessPopup() {
-    const popup = document.getElementById('success-popup');
-    if (!popup) {
-        return;
-    }
+function renderLeadTable() {
+    const body = document.getElementById('lead-table-body');
+    const visibleLeads = getFilteredLeads();
 
-    popup.classList.add('hidden');
-    popup.classList.remove('flex');
-
-    if (successPopupTimer) {
-        clearTimeout(successPopupTimer);
-        successPopupTimer = null;
-    }
-}
-
-function getBase64(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = (error) => reject(error);
-    });
-}
-
-async function uploadImageToStorage(file) {
-    if (!_supabase || !_supabase.storage) {
-        throw new Error('Supabase storage is not available.');
-    }
-
-    const bucket = (typeof CONFIG !== 'undefined' && CONFIG.storageBucket) ? CONFIG.storageBucket : 'product-images';
-    const extension = (file.name.split('.').pop() || 'jpg').toLowerCase();
-    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extension}`;
-
-    const { error: uploadError } = await _supabase
-        .storage
-        .from(bucket)
-        .upload(fileName, file, { upsert: false });
-
-    if (uploadError) {
-        throw uploadError;
-    }
-
-    const { data } = _supabase
-        .storage
-        .from(bucket)
-        .getPublicUrl(fileName);
-
-    if (!data?.publicUrl) {
-        throw new Error('Could not generate a public URL for the uploaded image.');
-    }
-
-    return data.publicUrl;
-}
-
-function syncCategories(selectedCategory) {
-    const tagContainer = document.getElementById('category-tags');
-    const dropdown = document.getElementById('p-category');
-    const currentSelected = selectedCategory || dropdown.value || window.categories[0] || '';
-
-    tagContainer.innerHTML = window.categories.map((cat, index) => `
-        <span class="bg-white border border-emerald-200 text-emerald-900 px-3 py-1 rounded-full text-[10px] font-bold flex items-center gap-2">
-            ${cat}
-            <button onclick="deleteCategory(${index})" class="text-red-400 hover:text-red-600">&times;</button>
-        </span>
-    `).join('');
-
-    dropdown.innerHTML = window.categories.map((cat) => `
-        <option value="${cat}">${cat}</option>
-    `).join('');
-
-    if (window.categories.includes(currentSelected)) {
-        dropdown.value = currentSelected;
-    }
-}
-
-function hydrateCategoriesFromInventory() {
-    const inventoryCategories = [...new Set(inventory.map((item) => item.category).filter(Boolean))];
-    const merged = [...new Set([...(window.categories || []), ...inventoryCategories])];
-    window.categories = merged.length ? merged : ['Nuts', 'Seeds', 'Specialty'];
-    syncCategories();
-}
-
-function addCategory() {
-    const input = document.getElementById('new-cat-name');
-    const value = input.value.trim();
-    if (value !== '' && !window.categories.includes(value)) {
-        window.categories.push(value);
-        input.value = '';
-        syncCategories(value);
-        alert('Category list updated.');
-    }
-}
-
-function deleteCategory(index) {
-    if (index < 0 || index >= window.categories.length) {
-        return;
-    }
-    if (confirm('Remove this category? Products already assigned to it will keep their current value.')) {
-        window.categories.splice(index, 1);
-        syncCategories();
-    }
-}
-
-function renderInventory() {
-    const list = document.getElementById('admin-product-list');
-    document.getElementById('item-count').innerText = `${inventory.length} Items`;
-
-    if (!list) {
-        return;
-    }
-
-    if (!inventory.length) {
-        list.innerHTML = `
-            <tr>
-                <td colspan="5" class="p-6 text-sm text-slate-400 text-center">No products found.</td>
-            </tr>
-        `;
-        return;
-    }
-
-    setAdminStatus(`Connected. Showing ${inventory.length} live product${inventory.length === 1 ? '' : 's'}.`, 'success');
-
-    list.innerHTML = inventory.map((product, index) => `
-        <tr class="border-b border-emerald-900/10">
-            <td class="p-4">
-                <div class="flex items-center gap-3">
-                    <img src="${product.image}" class="w-12 h-12 rounded-xl object-cover" onerror="this.src='images/default-product.jpg'">
-                    <div>
-                        <p class="text-xs font-bold text-emerald-900">${product.name}</p>
-                        <p class="text-[11px] text-slate-500">${product.benefits || ''}</p>
-                    </div>
+    body.innerHTML = visibleLeads.map((lead) => `
+        <tr class="${lead.qualifies ? 'bg-transparent' : 'bg-rose-500/10'}">
+            <td class="p-6 align-top">
+                <p class="text-sm font-black text-white">${lead.name}</p>
+                <p class="text-xs text-slate-500 mt-1">${lead.leadId} • ${lead.employerName} • ${lead.source}</p>
+                <p class="text-xs text-slate-400 mt-3">Phone +${lead.phone || 'N/A'}${lead.nrc ? ` • NRC ${lead.nrc}` : ''}</p>
+            </td>
+            <td class="p-6 align-top">
+                <p class="text-sm font-black text-white">${formatCurrency(lead.loanAmount)}</p>
+                <p class="text-xs text-slate-500 mt-1">Basic salary ${formatCurrency(lead.basicSalary)}</p>
+                <p class="text-xs text-slate-400 mt-3">${lead.months} months</p>
+            </td>
+            <td class="p-6 align-top">
+                <p class="text-sm font-black text-amber-400">${formatCurrency(lead.cashInHand)}</p>
+                <p class="text-xs text-slate-500 mt-1">Monthly ${formatCurrency(lead.monthlyRepayment)}</p>
+                <p class="text-xs ${lead.qualifies ? 'text-slate-500' : 'text-rose-300'} mt-1">40% cap ${formatCurrency(lead.affordabilityLimit)}</p>
+            </td>
+            <td class="p-6 align-top">${getStatusMarkup(lead)}</td>
+            <td class="p-6 align-top text-right">
+                <div class="flex justify-end gap-2 flex-wrap">
+                    <button class="view-lead rounded-full border border-amber-500/50 bg-amber-500/10 px-4 py-2 text-[10px] uppercase tracking-widest font-black text-amber-400 hover:bg-amber-500 hover:text-slate-900 transition-all" data-lead-id="${lead.leadId}">View File</button>
+                    <button class="contact-lead rounded-full border border-slate-700 px-4 py-2 text-[10px] uppercase tracking-widest font-black text-white hover:border-amber-500 hover:text-amber-400 transition-all" data-lead-id="${lead.leadId}">WhatsApp</button>
+                    <button class="cycle-status rounded-full border border-slate-700 px-4 py-2 text-[10px] uppercase tracking-widest font-black text-slate-400 hover:text-white transition-all" data-lead-id="${lead.leadId}">Advance</button>
                 </div>
             </td>
-            <td class="p-4 text-xs text-slate-500">${product.category}</td>
-            <td class="p-4 text-xs text-emerald-700 font-black">${product.price}</td>
-            <td class="p-4">
-                <span class="px-2 py-1 rounded-full text-[9px] ${product.is_in_stock === false ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}">
-                    ${product.is_in_stock === false ? 'OUT OF STOCK' : 'IN STOCK'}
-                </span>
-            </td>
-            <td class="p-4 text-right">
-                <button onclick="editProduct(${index})" class="text-blue-600 hover:text-blue-800 text-xs font-bold mr-3">Edit</button>
-                <button onclick="deleteProduct(${product.id})" class="text-red-500 hover:text-red-700 text-xs font-bold">Delete</button>
-            </td>
+        </tr>
+    `).join('');
+
+    if (!visibleLeads.length) {
+        body.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-sm text-slate-500">No leads match the current search and filter settings.</td></tr>';
+    }
+
+    bindRowActions();
+}
+
+function renderLeadCards() {
+    const container = document.getElementById('lead-cards');
+    const visibleLeads = getFilteredLeads();
+
+    container.innerHTML = visibleLeads.map((lead) => `
+        <article class="rounded-[1.75rem] border ${lead.qualifies ? 'border-slate-800 bg-slate-950' : 'border-rose-500/30 bg-rose-950/20'} p-6 shadow-xl">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <p class="text-xs uppercase tracking-widest text-slate-500 font-black">${lead.leadId}</p>
+                    <h4 class="text-lg font-black text-white mt-2">${lead.name}</h4>
+                    <p class="text-sm text-slate-400 mt-1">${lead.employerName} • +${lead.phone || 'N/A'}</p>
+                </div>
+                <span class="text-[10px] font-black uppercase tracking-widest ${lead.qualifies ? 'text-emerald-300' : 'text-rose-300'}">${lead.qualifies ? 'Qualified' : 'Review'}</span>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 mt-6 text-sm">
+                <div class="rounded-2xl border border-slate-800 p-4">
+                    <p class="text-[10px] uppercase tracking-widest text-slate-500 font-black">Monthly</p>
+                    <p class="text-white font-black mt-2">${formatCurrency(lead.monthlyRepayment)}</p>
+                </div>
+                <div class="rounded-2xl border border-slate-800 p-4">
+                    <p class="text-[10px] uppercase tracking-widest text-slate-500 font-black">Limit</p>
+                    <p class="${lead.qualifies ? 'text-emerald-300' : 'text-rose-300'} font-black mt-2">${formatCurrency(lead.affordabilityLimit)}</p>
+                </div>
+            </div>
+
+            <div class="mt-6 space-y-2">
+                <p class="text-[10px] uppercase tracking-widest text-slate-500 font-black">Missing Documents</p>
+                <p class="text-sm text-slate-300">${lead.missingDocs.length ? lead.missingDocs.join(', ') : 'Complete file pack received'}</p>
+            </div>
+        </article>
+    `).join('');
+
+    if (!visibleLeads.length) {
+        container.innerHTML = '<p class="text-sm text-slate-500">No leads match the current search and filter settings.</p>';
+    }
+}
+
+function renderDocuments() {
+    const container = document.getElementById('document-list');
+    const leadsMissingDocs = getFilteredLeads().filter((lead) => lead.missingDocs.length > 0);
+
+    container.innerHTML = leadsMissingDocs.map((lead) => `
+        <article class="rounded-[1.5rem] border border-slate-800 bg-slate-950 p-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+                <p class="text-sm font-black text-white">${lead.name}</p>
+                <p class="text-xs text-slate-500 mt-1">${lead.leadId} • ${lead.employerName} • ${new Date(lead.createdAt).toLocaleString()}</p>
+            </div>
+            <div class="flex-1 md:px-8">
+                <p class="text-[10px] uppercase tracking-widest text-slate-500 font-black">Outstanding</p>
+                <p class="text-sm text-amber-300 mt-2">${lead.missingDocs.join(', ')}</p>
+            </div>
+            <button class="contact-lead rounded-full border border-slate-700 px-4 py-2 text-[10px] uppercase tracking-widest font-black text-white hover:border-amber-500 hover:text-amber-400 transition-all self-start md:self-auto" data-lead-id="${lead.leadId}">Request Docs</button>
+        </article>
+    `).join('');
+
+    if (!leadsMissingDocs.length) {
+        container.innerHTML = '<p class="text-sm text-slate-500">No missing documents for the current filter selection.</p>';
+    }
+
+    bindRowActions();
+}
+
+function renderSettings() {
+    const body = document.getElementById('settings-table');
+
+    body.innerHTML = Object.entries(employerRules).map(([code, rule]) => `
+        <tr>
+            <td class="py-5 pr-4 text-sm font-black text-white">${rule.name}</td>
+            <td class="py-5 pr-4 text-sm text-slate-400">${(rule.interest * 100).toFixed(2)}%</td>
+            <td class="py-5 pr-4 text-sm text-slate-400">${(adminFeeRate * 100).toFixed(2)}%</td>
+            <td class="py-5 pr-4 text-sm text-slate-400">${rule.maxMonths} months</td>
         </tr>
     `).join('');
 }
 
-function editProduct(index) {
-    const product = inventory[index];
-    if (!product) {
-        return;
-    }
-
-    document.getElementById('form-title').innerText = 'Edit Product';
-    document.getElementById('edit-index').value = index;
-    editingId = product.id || null;
-    document.getElementById('p-name').value = product.name || '';
-    document.getElementById('p-price').value = product.price || '';
-    document.getElementById('p-benefits').value = product.benefits || '';
-    document.getElementById('is_in_stock').checked = product.is_in_stock !== false;
-
-    if (product.category && !window.categories.includes(product.category)) {
-        window.categories.push(product.category);
-        syncCategories(product.category);
-    }
-
-    document.getElementById('p-category').value = product.category || 'Nuts';
-    document.getElementById('p-image').value = product.image || '';
-    document.getElementById('product-image-file').value = '';
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+function renderAll() {
+    renderStats();
+    renderLeadTable();
+    renderLeadCards();
+    renderDocuments();
+    renderSettings();
 }
 
-async function saveProduct() {
-    if (!(await requireSession())) {
-        return;
+function persistLead(lead) {
+    const leadIndex = leadsState.findIndex((item) => item.leadId === lead.leadId);
+    if (leadIndex !== -1) {
+        leadsState[leadIndex] = lead;
     }
+    persistLocalState();
 
-    const index = parseInt(document.getElementById('edit-index').value, 10);
-    const fileInput = document.getElementById('product-image-file');
-    const urlInput = document.getElementById('p-image').value.trim();
-    const existingImage = index >= 0 && inventory[index] ? inventory[index].image : '';
-    const newImageFile = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
-
-    let imageData = urlInput || existingImage;
-
-    if (_supabase && newImageFile) {
-        try {
-            imageData = await uploadImageToStorage(newImageFile);
-        } catch (error) {
-            console.error('Storage upload failed:', error.message || error);
-            alert(`Image upload failed: ${error.message || 'Unknown error'}`);
-            return;
-        }
-    } else if (newImageFile) {
-        try {
-            imageData = await getBase64(newImageFile);
-        } catch (error) {
-            alert(`Error reading image file: ${error.message}`);
-            return;
-        }
-    }
-
-    const newProduct = {
-        name: document.getElementById('p-name').value.trim(),
-        price: document.getElementById('p-price').value.trim(),
-        category: document.getElementById('p-category').value,
-        benefits: document.getElementById('p-benefits').value.trim(),
-        image: imageData,
-        is_in_stock: document.getElementById('is_in_stock').checked
-    };
-
-    if (!newProduct.name || !newProduct.price || !newProduct.image) {
-        alert('Please complete name, price, and upload or paste an image before saving.');
-        return;
-    }
-
-    if (_supabase) {
-        const payload = {
-            name: newProduct.name,
-            price: newProduct.price,
-            category: newProduct.category,
-            benefits: newProduct.benefits,
-            image_url: newProduct.image,
-            is_in_stock: newProduct.is_in_stock
-        };
-
-        let error;
-        if (editingId) {
-            ({ error } = await _supabase.from('products').update(payload).eq('id', editingId));
-        } else {
-            ({ error } = await _supabase.from('products').insert([payload]));
-        }
-
-        if (error) {
-            console.error('Error saving:', error.message);
-            alert('Failed to save. Check console.');
-            return;
-        }
-
-        await loadInventory();
-    } else {
-        if (index === -1) {
-            inventory.push(newProduct);
-        } else {
-            inventory[index] = { ...inventory[index], ...newProduct };
-        }
-        renderInventory();
-    }
-
-    if (newProduct.category && !window.categories.includes(newProduct.category)) {
-        window.categories.push(newProduct.category);
-    }
-
-    resetForm();
-    const successMessage = _supabase
-        ? 'Loan package is now live on MH Finance.'
-        : 'Inventory updated locally. Generate product data to export.';
-    setAdminStatus(successMessage, 'success');
-    showSuccessPopup(successMessage);
-}
-
-async function deleteProduct(id) {
-    if (!(await requireSession())) {
-        return;
-    }
-
-    const item = inventory.find((product) => product.id === id);
-    if (!item) {
-        return;
-    }
-
-    if (!confirm('Are you sure you want to remove this loan package from MH Finance?')) {
-        return;
-    }
-
-    if (_supabase && item.id) {
-        const { error } = await _supabase.from('products').delete().eq('id', item.id);
-        if (error) {
-            console.error('Admin Fetch Error:', error.message);
-            alert('Error deleting product');
-            return;
-        }
-        await refreshAdminTable();
-    } else {
-        inventory = inventory.filter((product) => product.id !== id);
-        renderInventory();
-    }
-
-    resetForm();
-}
-
-function resetForm() {
-    document.getElementById('admin-form').reset();
-    document.getElementById('edit-index').value = '-1';
-    document.getElementById('form-title').innerText = 'Add New Product';
-    editingId = null;
-    document.getElementById('product-image-file').value = '';
-    document.getElementById('p-image').value = '';
-    document.getElementById('p-benefits').value = '';
-    document.getElementById('is_in_stock').checked = true;
-    syncCategories();
-}
-
-function buildProductsCode() {
-    const portable = inventory.map((item) => ({
-        id: item.id,
-        name: item.name,
-        category: item.category,
-        price: item.price,
-        benefits: item.benefits || '',
-        image: item.image,
-        is_in_stock: item.is_in_stock !== false
-    }));
-    return `const products = ${JSON.stringify(portable, null, 4)};`;
-}
-
-function exportCode() {
-    const output = document.getElementById('output-code');
-    output.classList.remove('hidden');
-    output.textContent = buildProductsCode();
-    output.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
-
-async function exportData() {
-    const code = buildProductsCode();
-    console.log(code);
-
-    try {
-        await navigator.clipboard.writeText(code);
-        alert('Product code copied. Paste it into js/products.js, then commit and push.');
-    } catch (error) {
-        alert('Code printed to console. Copy it from DevTools Console and paste into js/products.js.');
+    if (firebaseLeadsRef && lead.firebaseKey) {
+        firebaseLeadsRef.child(lead.firebaseKey).update({
+            status: lead.status,
+            missingDocs: lead.missingDocs,
+            documentPaths: lead.documentPaths || {}
+        });
     }
 }
 
-async function refreshAdminTable() {
-    if (!_supabase) {
-        setAdminStatus('Supabase is not connected. Add your Project URL and Anon Public Key in js/config.js.', 'warning');
-        renderInventory();
-        hydrateCategoriesFromInventory();
+function openWhatsApp(leadId) {
+    const lead = leadsState.find((item) => item.leadId === leadId);
+    if (!lead) {
         return;
     }
 
-    if (!(await requireSession())) {
-        return;
-    }
+    const message = [
+        `Hello ${lead.name},`,
+        `Your MH Finance application ${lead.leadId} is under review.`,
+        `Employer: ${lead.employerName}`,
+        `Requested amount: ${formatCurrency(lead.loanAmount)}`,
+        `Monthly repayment: ${formatCurrency(lead.monthlyRepayment)}`,
+        lead.missingDocs.length ? `Outstanding documents: ${lead.missingDocs.join(', ')}` : 'Your file pack is complete.',
+        'MH Finance will update you shortly.'
+    ].join('\n');
 
-    const { data, error } = await _supabase
-        .from('products')
-        .select('*')
-        .order('id', { ascending: false });
-
-    if (error) {
-        console.error('Admin Fetch Error:', error.message);
-        setAdminStatus(`Supabase fetch failed: ${error.message}`, 'error');
-        renderInventory();
-        hydrateCategoriesFromInventory();
-        return;
-    }
-
-    inventory = (data || []).map((item) => ({
-        id: item.id,
-        name: item.name,
-        price: item.price,
-        category: item.category,
-        benefits: item.benefits,
-        image: item.image_url,
-        is_in_stock: item.is_in_stock !== false
-    }));
-
-    if (!inventory.length) {
-        setAdminStatus('Supabase connected, but the products table returned 0 rows.', 'warning');
-    }
-
-    renderInventory();
-    hydrateCategoriesFromInventory();
+    window.open(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`, '_blank');
 }
 
-async function loadInventory() {
-    await refreshAdminTable();
+function advanceStatus(leadId) {
+    const lead = leadsState.find((item) => item.leadId === leadId);
+    if (!lead) {
+        return;
+    }
+
+    const order = ['new', 'pending-docs', 'review', 'approved'];
+    const currentIndex = order.indexOf(lead.status);
+    const nextStatus = order[(currentIndex + 1) % order.length];
+    lead.status = nextStatus;
+    persistLead(lead);
+    renderAll();
 }
 
-async function handleLogin() {
-    if (!_supabase || !_supabase.auth) {
-        alert('Supabase auth is not available. Check js/config.js credentials.');
-        return;
-    }
-
-    const email = document.getElementById('auth-email')?.value.trim();
-    const password = document.getElementById('auth-password')?.value || '';
-
-    if (!email || !password) {
-        setAuthError('Enter both email and password.');
-        return;
-    }
-
-    setAuthError('');
-    const { error } = await _supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-        setAuthError(`Access denied: ${error.message}`);
-        return;
-    }
-
-    showDashboard();
-    await refreshAdminTable();
-}
-
-async function handleLogout() {
-    if (_supabase && _supabase.auth) {
-        await _supabase.auth.signOut();
-    }
-    showLoginOverlay();
-    setAdminStatus('Signed out. Please sign in to continue.', 'warning');
-}
-
-window.addCategory = addCategory;
-window.deleteCategory = deleteCategory;
-window.editProduct = editProduct;
-window.saveProduct = saveProduct;
-window.deleteProduct = deleteProduct;
-window.resetForm = resetForm;
-window.exportCode = exportCode;
-window.exportData = exportData;
-window.refreshAdminTable = refreshAdminTable;
-window.handleLogin = handleLogin;
-window.handleLogout = handleLogout;
-window.closeSuccessPopup = closeSuccessPopup;
-
-window.addEventListener('DOMContentLoaded', async () => {
-    syncCategories();
-
-    if (!_supabase || !_supabase.auth) {
-        showDashboard();
-        setAdminStatus('Supabase auth unavailable; dashboard opened in fallback mode.', 'warning');
-        await refreshAdminTable();
-        return;
-    }
-
-    const { data, error } = await _supabase.auth.getSession();
-    if (error) {
-        showLoginOverlay();
-        setAuthError(error.message);
-        return;
-    }
-
-    if (data?.session) {
-        showDashboard();
-        await refreshAdminTable();
-    } else {
-        showLoginOverlay();
-        setAdminStatus('Please sign in to access inventory controls.', 'warning');
-    }
-
-    _supabase.auth.onAuthStateChange(async (_event, session) => {
-        if (session) {
-            showDashboard();
-            await refreshAdminTable();
-        } else {
-            showLoginOverlay();
-        }
+function bindRowActions() {
+    document.querySelectorAll('.view-lead').forEach((button) => {
+        button.onclick = () => openLeadPanel(button.dataset.leadId);
     });
+
+    document.querySelectorAll('.contact-lead').forEach((button) => {
+        button.onclick = () => openWhatsApp(button.dataset.leadId);
+    });
+
+    document.querySelectorAll('.cycle-status').forEach((button) => {
+        button.onclick = () => advanceStatus(button.dataset.leadId);
+    });
+}
+
+function setActivePanel(view) {
+    document.querySelectorAll('.admin-panel').forEach((panel) => {
+        panel.classList.toggle('hidden', panel.dataset.panel !== view);
+    });
+
+    document.querySelectorAll('.admin-nav-item').forEach((button) => {
+        const isActive = button.dataset.view === view;
+        button.classList.toggle('text-amber-500', isActive);
+        button.classList.toggle('text-slate-500', !isActive);
+        button.classList.toggle('hover:text-white', !isActive);
+    });
+}
+
+function setLeadFilter(filter) {
+    currentStatusFilter = filter;
+    document.querySelectorAll('.lead-filter').forEach((button) => {
+        const isActive = button.dataset.filter === filter;
+        button.classList.toggle('bg-slate-800', isActive);
+        button.classList.toggle('text-white', isActive);
+        button.classList.toggle('text-slate-400', !isActive);
+    });
+
+    renderAll();
+}
+
+function initNavigation() {
+    document.querySelectorAll('.admin-nav-item').forEach((button) => {
+        button.addEventListener('click', () => {
+            setActivePanel(button.dataset.view);
+        });
+    });
+
+    document.querySelectorAll('.lead-filter').forEach((button) => {
+        button.addEventListener('click', () => {
+            setLeadFilter(button.dataset.filter);
+        });
+    });
+
+    const searchInput = document.getElementById('lead-search');
+    const employerFilter = document.getElementById('employer-filter');
+
+    searchInput?.addEventListener('input', (event) => {
+        currentSearchTerm = String(event.target.value || '').trim().toLowerCase();
+        renderAll();
+    });
+
+    employerFilter?.addEventListener('change', (event) => {
+        currentEmployerFilter = event.target.value || 'all';
+        renderAll();
+    });
+}
+
+function subscribeToLeadStream() {
+    const localLeads = typeof getLocalLeads === 'function' ? getLocalLeads() : [];
+    hydrateLeads(localLeads, localLeads.length ? 'Loaded from local backup' : 'Using sample leads');
+
+    const database = typeof getFirebaseDatabase === 'function' ? getFirebaseDatabase() : null;
+    if (!database || typeof FIREBASE_LEADS_PATH === 'undefined') {
+        setCloudStatus(localLeads.length ? 'Loaded from local backup' : 'Local fallback only');
+        return;
+    }
+
+    firebaseLeadsRef = database.ref(FIREBASE_LEADS_PATH);
+    firebaseLeadsRef.on('value', (snapshot) => {
+        const value = snapshot.val() || {};
+        const firebaseLeads = Object.keys(value).map((key) => normalizeLead(value[key], key));
+        hydrateLeads(firebaseLeads, 'Firebase live sync active');
+    }, (error) => {
+        console.error('Firebase lead stream failed:', error);
+        setCloudStatus('Firebase unavailable, using local backup');
+    });
+}
+
+// ─── Lead Detail Panel ───────────────────────────────────────────────────────
+
+function openLeadPanel(leadId) {
+    const lead = leadsState.find((item) => item.leadId === leadId);
+    if (!lead) return;
+
+    currentLeadId = leadId;
+
+    document.getElementById('panel-lead-id').textContent = lead.leadId;
+    document.getElementById('panel-client-name').textContent = lead.name;
+    document.getElementById('panel-client-employer').textContent = `${lead.employerName} \u2022 ${lead.months} months`;
+    document.getElementById('panel-payout').textContent = formatCurrency(lead.cashInHand);
+    document.getElementById('panel-repayment').textContent = formatCurrency(lead.monthlyRepayment);
+
+    const affordEl = document.getElementById('panel-affordability');
+    affordEl.textContent = formatCurrency(lead.affordabilityLimit);
+    affordEl.className = `text-base font-black mt-2 ${lead.qualifies ? 'text-emerald-400' : 'text-rose-400'}`;
+
+    document.getElementById('panel-phone').textContent = `+${lead.phone || 'N/A'}`;
+    document.getElementById('panel-nrc').textContent = lead.nrc ? `NRC ${lead.nrc}` : 'NRC not captured';
+
+    const waBtn = document.getElementById('panel-whatsapp-btn');
+    if (waBtn) waBtn.onclick = () => openWhatsApp(leadId);
+
+    ['nrc', 'payslips', 'statement', 'employer-letter'].forEach((docType) => {
+        const el = document.getElementById(`status-${docType}`);
+        if (!el) return;
+        const secured = lead.documentPaths && lead.documentPaths[docType];
+        el.textContent = secured ? 'Document Secured' : 'Not Uploaded';
+        el.className = `mt-3 text-[9px] font-bold uppercase tracking-widest ${secured ? 'text-emerald-400' : 'text-slate-600'}`;
+    });
+
+    const backdrop = document.getElementById('lead-panel-backdrop');
+    const panel = document.getElementById('lead-panel');
+    backdrop.classList.remove('hidden');
+    panel.classList.remove('hidden');
+    requestAnimationFrame(() => {
+        panel.classList.remove('translate-x-full');
+        panel.classList.add('translate-x-0');
+    });
+}
+
+function closeLeadPanel() {
+    const backdrop = document.getElementById('lead-panel-backdrop');
+    const panel = document.getElementById('lead-panel');
+    panel.classList.remove('translate-x-0');
+    panel.classList.add('translate-x-full');
+    setTimeout(() => {
+        panel.classList.add('hidden');
+        backdrop.classList.add('hidden');
+        currentLeadId = null;
+    }, 310);
+}
+
+async function handleUpload(input, docType) {
+    const file = input.files[0];
+    const statusEl = document.getElementById(`status-${docType}`);
+    if (!file || !currentLeadId || !statusEl) return;
+
+    statusEl.textContent = 'Uploading\u2026';
+    statusEl.className = 'mt-3 text-[9px] font-bold uppercase tracking-widest text-amber-400';
+
+    if (typeof _supabase === 'undefined' || !_supabase) {
+        statusEl.textContent = 'Storage not configured \u2014 add Supabase keys to config.js';
+        statusEl.className = 'mt-3 text-[9px] font-bold uppercase tracking-widest text-rose-400';
+        return;
+    }
+
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storagePath = `${currentLeadId}/${docType}-${Date.now()}-${safeName}`;
+
+    const { data, error } = await _supabase.storage
+        .from('client-docs')
+        .upload(storagePath, file, { upsert: true });
+
+    if (error) {
+        statusEl.textContent = 'Upload failed \u2014 check bucket permissions';
+        statusEl.className = 'mt-3 text-[9px] font-bold uppercase tracking-widest text-rose-400';
+        console.error('Supabase storage error:', error.message);
+        return;
+    }
+
+    statusEl.textContent = 'Document Secured';
+    statusEl.className = 'mt-3 text-[9px] font-bold uppercase tracking-widest text-emerald-400';
+    updateLeadDocStatus(currentLeadId, docType, data.path);
+}
+
+function updateLeadDocStatus(leadId, docType, filePath) {
+    const lead = leadsState.find((item) => item.leadId === leadId);
+    if (!lead) return;
+
+    if (!lead.documentPaths) lead.documentPaths = {};
+    lead.documentPaths[docType] = filePath;
+
+    const docKeywords = {
+        'nrc': ['nrc', 'national id'],
+        'payslips': ['payslip'],
+        'statement': ['bank statement', 'statement'],
+        'employer-letter': ['employer letter', 'employer']
+    };
+    const keywords = docKeywords[docType] || [];
+    lead.missingDocs = lead.missingDocs.filter(
+        (doc) => !keywords.some((kw) => doc.toLowerCase().includes(kw))
+    );
+
+    persistLead(lead);
+    renderAll();
+}
+
+async function downloadAllDocs() {
+    if (!currentLeadId) return;
+
+    if (typeof _supabase === 'undefined' || !_supabase) {
+        alert('Storage not configured. Add Supabase keys to config.js to enable downloads.');
+        return;
+    }
+
+    const { data: files, error } = await _supabase.storage
+        .from('client-docs')
+        .list(currentLeadId);
+
+    if (error || !files || !files.length) {
+        alert('No uploaded documents found for this lead yet.');
+        return;
+    }
+
+    for (const fileEntry of files) {
+        const { data } = _supabase.storage
+            .from('client-docs')
+            .getPublicUrl(`${currentLeadId}/${fileEntry.name}`);
+
+        if (data && data.publicUrl) {
+            const anchor = document.createElement('a');
+            anchor.href = data.publicUrl;
+            anchor.download = fileEntry.name;
+            anchor.target = '_blank';
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
+            await new Promise((resolve) => setTimeout(resolve, 400));
+        }
+    }
+}
+
+window.openLeadPanel = openLeadPanel;
+window.closeLeadPanel = closeLeadPanel;
+window.handleUpload = handleUpload;
+window.downloadAllDocs = downloadAllDocs;
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+    initNavigation();
+    setActivePanel('dashboard');
+    setLeadFilter('all');
+    subscribeToLeadStream();
 });

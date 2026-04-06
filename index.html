@@ -74,6 +74,25 @@
                             </select>
                         </div>
 
+                        <div class="loan-calc__lead-grid">
+                            <div class="loan-calc__field">
+                                <label class="loan-calc__label" for="lead-name">Full Name</label>
+                                <input id="lead-name" class="loan-calc__input" type="text" placeholder="Enter your full name" autocomplete="name">
+                            </div>
+                            <div class="loan-calc__field">
+                                <label class="loan-calc__label" for="lead-phone">Mobile Number</label>
+                                <input id="lead-phone" class="loan-calc__input" type="tel" placeholder="0975 123 456" autocomplete="tel">
+                            </div>
+                            <div class="loan-calc__field">
+                                <label class="loan-calc__label" for="lead-salary">Basic Salary</label>
+                                <input id="lead-salary" class="loan-calc__input" type="number" min="0" step="50" placeholder="Enter your basic salary" inputmode="decimal">
+                            </div>
+                            <div class="loan-calc__field">
+                                <label class="loan-calc__label" for="lead-nrc">NRC Number</label>
+                                <input id="lead-nrc" class="loan-calc__input" type="text" placeholder="Optional but recommended" autocomplete="off">
+                            </div>
+                        </div>
+
                         <div class="loan-calc__field loan-calc__field--spacious">
                             <div class="loan-calc__amount-header">
                                 <label class="loan-calc__label" for="calc-range">Loan Amount</label>
@@ -107,6 +126,7 @@
                             <p class="loan-calc__term-info">Net payout after all bank fees as per MFZ schedule.</p>
                         </div>
 
+                        <p id="lead-capture-status" class="loan-calc__status" aria-live="polite"></p>
                         <button onclick="checkoutWhatsApp()" class="btn-primary loan-calc__apply-btn">Apply Now</button>
                     </div>
                 </div>
@@ -173,6 +193,8 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
     <script src="js/config.js"></script>
     <script src="js/products.js"></script>
     <script src="js/script.js"></script>
