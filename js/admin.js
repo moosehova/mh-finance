@@ -16,6 +16,16 @@ function checkAdminAccess() {
 
 checkAdminAccess();
 
+function logoutAdmin() {
+    const confirmLogout = window.confirm('Securely log out of MH Finance Admin?');
+    if (!confirmLogout) {
+        return;
+    }
+
+    localStorage.removeItem('mh_admin_access');
+    window.location.reload();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 const employerRules = {
@@ -705,6 +715,12 @@ window.downloadAllDocs = downloadAllDocs;
 
 document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
+
+    const logoutButton = document.querySelector('.logout-btn');
+    if (logoutButton) {
+        logoutButton.addEventListener('click', logoutAdmin);
+    }
+
     setActivePanel('dashboard');
     setLeadFilter('all');
     subscribeToLeadStream();
