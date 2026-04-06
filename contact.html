@@ -3,32 +3,81 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Contact Keria Wellness</title>
+    <title>Contact MH Finance</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700;900&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
     <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-    <nav class="main-nav">
-        <a href="index.html"><img src="images/keria_logo.svg" alt="Keria Wellness" class="nav-logo" onerror="this.style.display='none'"></a>
-        <div class="menu">
-            <a href="index.html">Home</a>
-            <a href="about.html">About</a>
-            <a href="products.html">Shop</a>
-            <a href="contact.html">Contact</a>
+    <nav class="elite-nav">
+        <div class="elite-nav__inner">
+            <a href="index.html" class="elite-brand" aria-label="MH Finance Home">
+                <span class="elite-brand__mark">MH</span>
+                <span class="elite-brand__word">Finance</span>
+            </a>
+            <div class="elite-menu" aria-label="Primary navigation">
+                <a href="index.html">Calculator</a>
+                <a href="packages.html">Loan Tiers</a>
+                <a href="requirements.html">Checklist</a>
+                <a href="contact.html" class="is-active">Contact</a>
+            </div>
+            <a href="https://wa.me/260975931621" class="elite-nav__cta" target="_blank" rel="noopener noreferrer">Contact Us</a>
         </div>
     </nav>
 
-    <header class="hero">
-        <h1>Speak With The Apothecary</h1>
-        <p>For custom wellness guidance, pickup details, and delivery confirmations.</p>
-    </header>
+    <section class="contact-portal">
+        <div class="contact-portal__inner">
+            <div class="contact-portal__grid">
+                <div class="contact-portal__content">
+                    <div>
+                        <h1>Let's Get Your <br><span>Capital Ready.</span></h1>
+                        <p>Our team is ready to process your application. Visit our office or reach out digitally for an instant affordability check.</p>
+                    </div>
 
-    <section class="contact-card">
-        <h2 style="margin-top: 0; color: var(--keria-emerald); font-family: 'Playfair Display', serif;">WhatsApp Concierge</h2>
-        <p style="margin-bottom: 24px;">Tap below to message Keria Wellness directly.</p>
-        <a href="https://wa.me/260976410975" class="btn-primary" target="_blank" rel="noopener noreferrer">Message 097 641 0975</a>
+                    <div class="contact-portal__details">
+                        <div class="contact-portal__item">
+                            <div class="contact-portal__icon">
+                                <span class="material-icons-round">alternate_email</span>
+                            </div>
+                            <div>
+                                <h4>Digital Support</h4>
+                                <a href="mailto:info@mhfinance.co.zm" class="contact-portal__link">info@mhfinance.co.zm</a>
+                            </div>
+                        </div>
+
+                        <div class="contact-portal__item">
+                            <div class="contact-portal__icon">
+                                <span class="material-icons-round">call</span>
+                            </div>
+                            <div>
+                                <h4>Direct Line</h4>
+                                <p>+260 975 931 621</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="contact-portal__card">
+                    <div class="contact-portal__chat-icon">💬</div>
+                    <h3>Chat with an Expert</h3>
+                    <p>The fastest way to get approved is via WhatsApp. Send us a "Hello" to begin your 24-hour payout process.</p>
+
+                    <a href="https://wa.me/260975931621" class="contact-portal__cta" target="_blank" rel="noopener noreferrer">Open WhatsApp Chat</a>
+
+                    <p class="contact-portal__hours">Available Mon - Fri: 08:00 - 17:00</p>
+                </div>
+            </div>
+
+            <div class="contact-portal__reminder">
+                <p>Ready to speed up? Have your <span>NRC</span> and <span>3 Latest Payslips</span> ready when you chat.</p>
+            </div>
+        </div>
     </section>
+
+    <footer class="contact-digital-footer">
+        <p>Digital-first support via <a href="mailto:info@mhfinance.co.zm">info@mhfinance.co.zm</a> and WhatsApp.</p>
+    </footer>
 </body>
 </html>

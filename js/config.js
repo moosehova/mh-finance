@@ -1,12 +1,15 @@
 const CONFIG = {
-    supabaseUrl: "https://zarblykuwtjhjvzdosqc.supabase.co",
-    supabaseKey: "sb_publishable_KwgEUe84jLMaYZm7CXwAVQ_1lLktnI_",
+    supabaseUrl: "YOUR_PROJECT_2_URL",
+    supabaseKey: "YOUR_PROJECT_2_KEY",
     storageBucket: "product-images",
-    whatsapp: "260976410975",
-    brand: "Keria Wellness",
+    whatsapp: "260975931621",
+    brand: "MH Finance",
     currency: "ZMW",
-    whatsappMessage: "Hello Keria Wellness, I would like to order "
+    whatsappMessage: "Hello MH Finance, I would like to apply for "
 };
+
+// Ensures we ONLY pull MH Finance data from the shared Studio table
+const CLIENT_ID = 'mh-finance';
 
 const hasSupabaseConfig = Boolean(CONFIG.supabaseUrl && CONFIG.supabaseKey);
 const { createClient } = typeof supabase !== 'undefined' ? supabase : { createClient: null };

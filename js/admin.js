@@ -64,7 +64,7 @@ function setAdminStatus(message, tone = 'warning') {
     status.textContent = message;
 }
 
-function showSuccessPopup(message = 'Product is now live on Keria Wellness.') {
+function showSuccessPopup(message = 'Loan package is now live on MH Finance.') {
     const popup = document.getElementById('success-popup');
     const messageTag = document.getElementById('success-popup-message');
     if (!popup) {
@@ -343,7 +343,7 @@ async function saveProduct() {
 
     resetForm();
     const successMessage = _supabase
-        ? 'Product is now live on Keria Wellness.'
+        ? 'Loan package is now live on MH Finance.'
         : 'Inventory updated locally. Generate product data to export.';
     setAdminStatus(successMessage, 'success');
     showSuccessPopup(successMessage);
@@ -359,7 +359,7 @@ async function deleteProduct(id) {
         return;
     }
 
-    if (!confirm('Are you sure you want to remove this product from Keria Wellness?')) {
+    if (!confirm('Are you sure you want to remove this loan package from MH Finance?')) {
         return;
     }
 

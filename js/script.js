@@ -22,25 +22,33 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeCategory = 'All';
     let searchTerm = '';
     let cart = [];
-    const CART_STORAGE_KEY = 'keria_cart';
+    const CART_STORAGE_KEY = 'mh_finance_cart';
     let productsChannel = null;
 
     function normalizeProduct(product) {
+        let specs = {};
+        try {
+            specs = typeof product.specs === 'object' && product.specs !== null
+                ? product.specs
+                : JSON.parse(product.specs || '{}');
+        } catch (_) {}
         return {
             id: product.id,
-            name: product.name || 'Unnamed Product',
-            category: product.category || 'Wellness',
-            price: product.price || 'K0',
-            benefits: product.benefits || '',
+            name: product.name || 'Unnamed Package',
+            category: product.category || 'Loan',
+            price: product.price || 'Contact Us',
+            benefits: product.description || product.benefits || '',
+            speed: specs.speed || '',
+            term: specs.term || '',
             image: product.image_url || product.image || 'images/default-product.jpg',
-            isInStock: product.is_in_stock !== false
+            isInStock: product.is_active !== false && product.is_in_stock !== false
         };
     }
 
     function renderProductCards(items) {
         grid.innerHTML = '';
         if (productCount) {
-            productCount.textContent = `${items.length} healthy product${items.length === 1 ? '' : 's'} available`;
+            productCount.textContent = `${items.length} loan package${items.length === 1 ? '' : 's'} available`;
         }
 
         if (!items.length) {
@@ -51,38 +59,43 @@ document.addEventListener('DOMContentLoaded', () => {
         items.forEach((product) => {
             const messagePrefix = typeof CONFIG !== 'undefined' && CONFIG.whatsappMessage
                 ? CONFIG.whatsappMessage
-                : 'Hello Keria Wellness, I would like to order ';
+                : 'Hello MH Finance, I would like to apply for ';
             const whatsappNumber = typeof CONFIG !== 'undefined' && CONFIG.whatsapp
                 ? CONFIG.whatsapp
-                : '260976410975';
+                : 'YOUR_WIFES_NUMBER';
             const outOfStock = product.isInStock === false;
             const badgeClass = outOfStock ? 'category-badge category-badge--soldout' : 'category-badge';
-            const statusText = outOfStock ? 'Sold Out' : product.category;
+            const statusText = outOfStock ? 'Unavailable' : product.category;
             const buttonClass = outOfStock ? 'btn-primary btn-primary--disabled' : 'btn-primary';
-            const buttonText = outOfStock ? 'Unavailable' : (hasCartUI ? 'Add to Cart' : 'Order Now');
+            const buttonText = outOfStock ? 'Unavailable' : 'Apply Now';
             const cardClass = outOfStock ? 'product-card product-card--soldout' : 'product-card';
             const modalPointerClass = modal ? 'product-card--interactive' : '';
+            const rateClass = outOfStock ? 'comparison-card__rate comparison-card__rate--muted' : 'comparison-card__rate';
+
             const actionMarkup = outOfStock
                 ? `<button type="button" class="${buttonClass}" style="font-size: 0.7rem; padding: 8px 16px;">${buttonText}</button>`
                 : (hasCartUI
-                    ? `<button type="button" class="${buttonClass}" data-add-cart="${product.id}" style="font-size: 0.7rem; padding: 8px 16px;">${buttonText}</button>`
+                    ? `<button type="button" class="${buttonClass}" data-add-cart="${product.id}" data-interest="${product.specs?.interest || 0.125}" style="font-size: 0.7rem; padding: 8px 16px;">${buttonText}</button>`
                     : `<a href="https://wa.me/${whatsappNumber}?text=${encodeURIComponent(messagePrefix + product.name)}" class="${buttonClass}" style="font-size: 0.7rem; padding: 8px 16px;" target="_blank" rel="noopener noreferrer">${buttonText}</a>`);
+
+            const chipsMarkup = (product.speed || product.term)
+                ? `<div class="comparison-card__chips">
+                        ${product.speed ? `<span class="comparison-chip">⚡ ${product.speed}</span>` : ''}
+                        ${product.term ? `<span class="comparison-chip">📅 ${product.term}</span>` : ''}
+                   </div>`
+                : '';
 
             const card = `
                 <div class="${cardClass} ${modalPointerClass}" ${modal ? `data-product-id="${product.id}"` : ''}>
-                    <div class="product-image-wrap">
-                        <img src="${product.image}" onerror="this.src='images/default-product.jpg'" alt="${product.name}" style="width: 100%; display: block;">
-                        ${outOfStock ? '<div class="stock-overlay">OUT OF STOCK</div>' : ''}
-                    </div>
-                    <div style="padding-top: 15px;">
+                    <div class="comparison-card__header">
                         <span class="${badgeClass}">${statusText}</span>
-                        <h3 style="color: var(--keria-emerald); margin: 10px 0 5px 0; font-family: 'Playfair Display', serif;">${product.name}</h3>
-                        <p style="font-size: 0.8rem; color: #64748b; margin-bottom: 15px;">${product.benefits}</p>
-
-                        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #eee; margin-top: 10px; padding-top: 15px; gap: 10px;">
-                            <span style="font-weight: 800; color: var(--keria-emerald);">${product.price}</span>
-                            ${actionMarkup}
-                        </div>
+                        <span class="${rateClass}">${product.price}</span>
+                    </div>
+                    <h3 class="comparison-card__name">${product.name}</h3>
+                    <p class="comparison-card__desc">${product.benefits}</p>
+                    ${chipsMarkup}
+                    <div class="comparison-card__action">
+                        ${actionMarkup}
                     </div>
                 </div>
             `;
@@ -103,25 +116,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const messagePrefix = typeof CONFIG !== 'undefined' && CONFIG.whatsappMessage
             ? CONFIG.whatsappMessage
-            : 'Hello Keria Wellness, I would like to order ';
+            : 'Hello MH Finance, I would like to apply for ';
         const whatsappNumber = typeof CONFIG !== 'undefined' && CONFIG.whatsapp
             ? CONFIG.whatsapp
-            : '260976410975';
+            : 'YOUR_WIFES_NUMBER';
         const outOfStock = product.isInStock === false;
 
         const modalActionMarkup = outOfStock
             ? '<button type="button" class="btn-primary btn-primary--disabled">Unavailable</button>'
             : (hasCartUI
-                ? `<button type="button" class="btn-primary" data-modal-add-cart="${product.id}">Add to Cart</button>`
-                : `<a href="https://wa.me/${whatsappNumber}?text=${encodeURIComponent(messagePrefix + product.name)}" class="btn-primary" target="_blank" rel="noopener noreferrer">Order via WhatsApp</a>`);
+                ? `<button type="button" class="btn-primary" data-modal-add-cart="${product.id}">Apply Now</button>`
+                : `<a href="https://wa.me/${whatsappNumber}?text=${encodeURIComponent(messagePrefix + product.name)}" class="btn-primary" target="_blank" rel="noopener noreferrer">Apply via WhatsApp</a>`);
+
+        const modalChips = (product.speed || product.term)
+            ? `<div class="comparison-card__chips" style="margin-bottom: 18px;">
+                ${product.speed ? `<span class="comparison-chip">⚡ Approval: ${product.speed}</span>` : ''}
+                ${product.term ? `<span class="comparison-chip">📅 Max Term: ${product.term}</span>` : ''}
+               </div>`
+            : '';
 
         modalContent.innerHTML = `
-            <img src="${product.image}" alt="${product.name}" class="modal-image" onerror="this.src='images/default-product.jpg'">
-            <span class="category-badge ${outOfStock ? 'category-badge--soldout' : ''}">${outOfStock ? 'Sold Out' : product.category}</span>
+            <span class="category-badge ${outOfStock ? 'category-badge--soldout' : ''}">${outOfStock ? 'Unavailable' : product.category}</span>
             <h2 id="modal-title" class="modal-title">${product.name}</h2>
-            <p class="modal-copy">${product.benefits || 'Pure wellness support for your daily routine.'}</p>
+            <div class="comparison-modal__rate">${product.price}</div>
+            <p class="modal-copy">${product.benefits || 'Contact us for full loan terms and requirements.'}</p>
+            ${modalChips}
             <div class="modal-row">
-                <span class="modal-price">${product.price}</span>
                 ${modalActionMarkup}
             </div>
         `;
@@ -274,21 +294,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const whatsappNumber = typeof CONFIG !== 'undefined' && CONFIG.whatsapp
             ? CONFIG.whatsapp
-            : '260976410975';
+            : 'YOUR_WIFES_NUMBER';
 
-        let message = '*Keria Wellness Order Request*\n';
+        let message = '*MH FINANCE - LOAN MATCHING REQUEST*\n';
         message += '--------------------------\n';
 
-        let total = 0;
         cart.forEach((item) => {
-            const itemTotal = getNumericPrice(item.price) * item.quantity;
-            message += `• ${item.name} (x${item.quantity}) - ${item.price}\n`;
-            total += itemTotal;
+            message += `Interested in: *${item.name}*\n`;
+            message += `Rate: ${item.price}\n`;
+            message += `Category: ${item.category}\n`;
         });
 
         message += '--------------------------\n';
-        message += `*Total Estimate:* K${total.toFixed(2)}\n\n`;
-        message += 'Please confirm availability and delivery details.';
+        message += 'Hello MH Finance, I saw these lender profiles on your portal. Based on my profile, please advise which one I qualify for and help me with the application.';
 
         window.open(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`, '_blank', 'noopener');
     }
@@ -338,8 +356,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const { data, error } = await _supabase
-                .from('products')
+                .from('studio_inventory')
                 .select('*')
+                .eq('client_id', CLIENT_ID || 'mh-finance')
+                .eq('is_active', true)
                 .order('id', { ascending: false });
 
             if (error) {
@@ -366,10 +386,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         productsChannel = _supabase
-            .channel('public:products-live')
+            .channel('public:studio-inventory-live')
             .on(
                 'postgres_changes',
-                { event: '*', schema: 'public', table: 'products' },
+                { event: '*', schema: 'public', table: 'studio_inventory' },
                 () => {
                     loadProducts();
                 }
@@ -400,6 +420,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const addCartButton = event.target.closest('[data-add-cart]');
             if (addCartButton) {
                 event.stopPropagation();
+                const interest = addCartButton.getAttribute('data-interest');
+                if (interest) syncCalculator(parseFloat(interest));
                 addToCart(addCartButton.dataset.addCart);
                 toggleCartModal(true);
                 return;
@@ -458,4 +480,209 @@ document.addEventListener('DOMContentLoaded', () => {
 
     subscribeToProductChanges();
     loadProducts();
+
+    const lenderSelect = document.getElementById('lender-select');
+    const amountSlider = document.getElementById('calc-range');
+    const resultDisplay = document.getElementById('calc-result');
+    const amountLabel = document.getElementById('calc-amount-label');
+    const termInfo = document.getElementById('calc-term-info');
+
+    function syncCalculator(lenderValue) {
+        if (!lenderSelect) return;
+        lenderSelect.value = lenderValue;
+        if (typeof calculateLoan === 'function') {
+            calculateLoan();
+        }
+        lenderSelect.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    if (lenderSelect && amountSlider && resultDisplay) {
+        function calculateLoan() {
+            const amount = parseFloat(amountSlider.value);
+            const selectedOption = lenderSelect.options[lenderSelect.selectedIndex];
+            const interestRate = parseFloat(selectedOption.value);
+            const termMonths = parseInt(selectedOption.getAttribute('data-term'));
+            const lenderName = selectedOption.getAttribute('data-name') || 'Selected Lender';
+
+            // Update UI labels
+            if (amountLabel) amountLabel.textContent = `K${amount.toLocaleString()}`;
+            if (termInfo) termInfo.textContent = `Based on a ${termMonths}-month term`;
+
+            // The Math: (Principal + (Principal * Rate)) / Term
+            // Simple interest calculation common in micro-finance
+            const totalRepayment = amount + (amount * interestRate);
+            const monthly = totalRepayment / termMonths;
+
+            if (resultDisplay) resultDisplay.textContent = `K${Math.round(monthly).toLocaleString()}`;
+        }
+
+        // Listen for interactions
+        lenderSelect.addEventListener('change', calculateLoan);
+        amountSlider.addEventListener('input', calculateLoan);
+
+        // Initial calculation on page load
+        calculateLoan();
+    }
+
+    // ============================================================
+    // FAIL-SAFE: Robust Calculator with Console Debugging
+    // This runs independently to ensure the slider always works
+    // ============================================================
+    const failsafeAmountSlider = document.getElementById('calc-range');
+    const failsafeLenderSelect = document.getElementById('lender-select');
+    const failsafeAmountLabel = document.getElementById('calc-amount-label');
+    const failsafeResultDisplay = document.getElementById('calc-result');
+    const failsafeTermInfo = document.getElementById('calc-term-info');
+
+    if (!failsafeAmountSlider) console.error('❌ Calculator: calc-range slider not found in HTML');
+    if (!failsafeLenderSelect) console.error('❌ Calculator: lender-select dropdown not found in HTML');
+
+    function updateLoanMath() {
+        if (!failsafeAmountSlider || !failsafeLenderSelect || !failsafeResultDisplay) {
+            return;
+        }
+
+        try {
+            const amount = parseFloat(failsafeAmountSlider.value);
+            const selectedOption = failsafeLenderSelect.options[failsafeLenderSelect.selectedIndex];
+            const interestRate = parseFloat(selectedOption.value);
+            const termMonths = parseInt(selectedOption.getAttribute('data-term'));
+
+            if (failsafeAmountLabel) {
+                failsafeAmountLabel.innerText = `K${amount.toLocaleString()}`;
+            }
+            if (failsafeTermInfo) {
+                failsafeTermInfo.innerText = `Based on a ${termMonths}-month term`;
+            }
+
+            const total = amount + (amount * interestRate);
+            const monthly = total / termMonths;
+
+            failsafeResultDisplay.innerText = `K${Math.round(monthly).toLocaleString()}`;
+        } catch (error) {
+            console.error('❌ Calculator math error:', error);
+        }
+    }
+
+    if (failsafeAmountSlider && failsafeLenderSelect) {
+        failsafeAmountSlider.addEventListener('input', updateLoanMath);
+        failsafeLenderSelect.addEventListener('change', updateLoanMath);
+        updateLoanMath();
+        console.log('✓ Calculator initialized successfully');
+    } else {
+        console.warn('⚠ Calculator fail-safe: Required elements missing from HTML');
+    }
+
+    // Make syncCalculator available globally for product card clicks
+    window.syncCalculator = function(lenderValue) {
+        if (!failsafeLenderSelect) {
+            console.error('❌ syncCalculator: lender-select not found');
+            return;
+        }
+        failsafeLenderSelect.value = lenderValue;
+        updateLoanMath();
+        setTimeout(() => {
+            failsafeLenderSelect.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+    };
 });
+
+// =====================================================
+// MH Finance — Multi-Employer Calculator
+// Rates from Loan Tools All Employers spreadsheet
+// =====================================================
+
+var MH_WHATSAPP  = (typeof CONFIG !== 'undefined' && CONFIG.whatsapp) ? CONFIG.whatsapp : '260975931621';
+var MH_ADMIN_RATE  = 0.01;    // 1.0%  monthly admin fee (recurring, all employers)
+var MH_ARRANGEMENT = 0.045;   // 4.5%  upfront
+var MH_INSURANCE   = 0.04;    // 4.0%  upfront
+var MH_PROCESSING  = 0.025;   // 2.5%  upfront
+var MH_INS_LEVY    = 0.03;    // 3.0%  of insurance fee
+var MH_CRB         = 35;      // K35   flat CRB fee
+
+function calculateLoan() {
+    var amountSlider    = document.getElementById('calc-range');
+    var periodSlider    = document.getElementById('calc-period');
+    var employerSelect  = document.getElementById('employer-select');
+    if (!amountSlider || !periodSlider || !employerSelect) return;
+
+    // Get employer-specific rate and max period
+    var opt = employerSelect.options[employerSelect.selectedIndex];
+    var monthlyRate = parseFloat(opt.getAttribute('data-rate')) || 0.0275;
+    var maxMonths = parseInt(opt.getAttribute('data-max')) || 72;
+    var employerName = opt.textContent.trim();
+
+    // Enforce period slider max for employer rules (e.g., G4S max 48)
+    periodSlider.max = maxMonths;
+    if (parseInt(periodSlider.value) > maxMonths) {
+        periodSlider.value = maxMonths;
+    }
+
+    var grossAmount = parseFloat(amountSlider.value);
+    var months      = parseInt(periodSlider.value);
+    // Repayment math: standard amortization PMT + monthly admin fee
+    var pmt = (grossAmount * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -months));
+    var totalMonthly = pmt + (grossAmount * MH_ADMIN_RATE);
+
+    // Deductions math from MFZ schedule
+    var deductions = (grossAmount * MH_ARRANGEMENT)
+        + (grossAmount * MH_INSURANCE)
+        + (grossAmount * MH_PROCESSING)
+        + (grossAmount * MH_INSURANCE * MH_INS_LEVY)
+        + MH_CRB;
+    var cashInHand = grossAmount - deductions;
+    var rateDisplay = (monthlyRate * 100).toFixed(2);
+
+    var amountLabel  = document.getElementById('calc-amount-label');
+    var periodLabel  = document.getElementById('calc-period-label');
+    var resultDisplay = document.getElementById('calc-result');
+    var cashDisplay  = document.getElementById('cash-in-hand');
+    var rateNote     = document.getElementById('calc-rate-note');
+
+    if (amountLabel)   amountLabel.textContent  = 'K' + grossAmount.toLocaleString();
+    if (periodLabel)   periodLabel.textContent  = months + ' Months';
+    if (resultDisplay) resultDisplay.textContent = Math.round(totalMonthly).toLocaleString();
+    if (cashDisplay)   cashDisplay.textContent  = 'K' + Math.round(cashInHand).toLocaleString();
+    if (rateNote)      rateNote.textContent     = employerName.split('(')[0].trim() + ' rate: ' + rateDisplay + '% per month';
+}
+
+function checkoutWhatsApp() {
+    var amountSlider   = document.getElementById('calc-range');
+    var periodSlider   = document.getElementById('calc-period');
+    var employerSelect = document.getElementById('employer-select');
+    var monthly        = document.getElementById('calc-result');
+    var cash           = document.getElementById('cash-in-hand');
+
+    var amount      = amountSlider   ? parseInt(amountSlider.value)   : 100000;
+    var period      = periodSlider   ? parseInt(periodSlider.value)   : 72;
+    var employer    = employerSelect ? employerSelect.options[employerSelect.selectedIndex].textContent.trim() : 'Not specified';
+    var monthlyText = monthly ? monthly.textContent : 'N/A';
+    var cashText    = cash    ? cash.textContent    : 'N/A';
+
+    var message = '*MH FINANCE \u2014 NEW LOAN APPLICATION*\n'
+        + '--------------------------\n'
+        + 'Employer: *' + employer + '*\n'
+        + 'Gross Loan: *K' + amount.toLocaleString() + '*\n'
+        + 'Period: *' + period + ' Months*\n'
+        + 'Est. Monthly Repayment: *K' + monthlyText + '*\n'
+        + 'Est. Cash in Hand: *' + cashText + '*\n'
+        + '--------------------------\n'
+        + 'Hello MH Finance, I have used your calculator and would like to proceed with this application. Please advise on the next steps.';
+
+    window.open('https://wa.me/' + MH_WHATSAPP + '?text=' + encodeURIComponent(message), '_blank', 'noopener');
+}
+
+// Wire all inputs on load
+document.addEventListener('DOMContentLoaded', function() {
+    var amountSlider   = document.getElementById('calc-range');
+    var periodSlider   = document.getElementById('calc-period');
+    var employerSelect = document.getElementById('employer-select');
+    if (amountSlider) amountSlider.addEventListener('input', calculateLoan);
+    if (periodSlider) periodSlider.addEventListener('input', calculateLoan);
+    if (employerSelect) employerSelect.addEventListener('change', calculateLoan);
+    calculateLoan();
+    console.log('\u2705 MH Finance Multi-Employer Calculator ready.');
+});
+
+// Fail-safe: re-run after DOM is fully settled
+setTimeout(calculateLoan, 600);
