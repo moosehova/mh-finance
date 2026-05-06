@@ -1,17 +1,30 @@
 // ─── Admin Security Guard ────────────────────────────────────────────────────
-const ADMIN_PASSWORD = "PurpleWorth2026!";
+const ADMIN_PASSWORD = "@Babiegal_2026";
+let loginAttempts = 0;
 
 function checkAdminAccess() {
     const session = localStorage.getItem('mh_admin_access');
-    if (session !== 'granted') {
-        const pass = prompt("🔐 MH Finance Admin — Enter Password:");
+    if (session === 'granted') {
+        return;
+    }
+
+    while (loginAttempts < 3) {
+        const pass = prompt(`🔐 MH Finance Admin — Attempt ${loginAttempts + 1}/3:`);
+
         if (pass === ADMIN_PASSWORD) {
             localStorage.setItem('mh_admin_access', 'granted');
-        } else {
-            alert("❌ Access Denied. You've been redirected to the homepage.");
-            window.location.href = "index.html";
+            alert('Access granted. Welcome, Admin.');
+            return;
+        }
+
+        loginAttempts += 1;
+        if (loginAttempts < 3) {
+            alert('Incorrect password. Please try again.');
         }
     }
+
+    alert('Too many failed attempts. Access locked for this session.');
+    window.location.href = "index.html";
 }
 
 checkAdminAccess();
