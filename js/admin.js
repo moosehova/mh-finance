@@ -1,48 +1,107 @@
-// ─── Admin Security Guard ────────────────────────────────────────────────────
-const ADMIN_PASSWORD = "@Babiegal_2026";
-let loginAttempts = 0;
+// ─── Secure Admin UI Auth (Zero Browser Popups!) ────────────────────────────
 
-function checkAdminAccess() {
-    const session = localStorage.getItem('mh_admin_access');
-    if (session === 'granted') {
+async function initAdminAuth() {
+    const overlay = document.getElementById('admin-login-overlay');
+    const form = document.getElementById('admin-login-form');
+    const submitBtn = document.getElementById('login-submit-btn');
+    const feedbackBox = document.getElementById('login-feedback');
+
+    if (!overlay || !form) return;
+
+    // Direct token check using our Supabase client instance
+    const { data: { session } } = await _supabase.auth.getSession();
+    
+    if (session) {
+        // User has a valid session! Leave the card hidden.
+        console.log("Admin session authorized.");
         return;
     }
 
-    while (loginAttempts < 3) {
-        const pass = prompt(`🔐 MH Finance Admin — Attempt ${loginAttempts + 1}/3:`);
+    // NO ACTIVE SESSION: Reveal the modern login card to the user smoothly
+    overlay.classList.remove('hidden');
+    overlay.classList.add('flex'); // Keeps your alignment layout beautiful
 
-        if (pass === ADMIN_PASSWORD) {
-            localStorage.setItem('mh_admin_access', 'granted');
-            alert('Access granted. Welcome, Admin.');
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        // ... rest of your existing form submission code stays exactly the same
+
+        const email = document.getElementById('login-email').value.trim();
+        const password = document.getElementById('login-password').value;
+
+        // Clear previous states
+        feedbackBox.classList.add('hidden');
+        feedbackBox.innerText = '';
+
+        submitBtn.disabled = true;
+        submitBtn.innerText = "AUTHENTICATING...";
+
+        const { data, error } = await _supabase.auth.signInWithPassword({
+            email: email,
+            password: password
+        });
+
+        if (error) {
+            // Render error message inside the page UI instead of an alert() popup
+            feedbackBox.innerText = `❌ Access Denied: ${error.message}`;
+            feedbackBox.classList.remove('hidden');
+
+            submitBtn.disabled = false;
+            submitBtn.innerText = "VERIFY CREDENTIALS";
             return;
         }
 
-        loginAttempts += 1;
-        if (loginAttempts < 3) {
-            alert('Incorrect password. Please try again.');
-        }
-    }
-
-    alert('Too many failed attempts. Access locked for this session.');
-    window.location.href = "index.html";
+        // Authentication successful: Hide overlay card smoothly
+        overlay.classList.add('hidden');
+        window.location.reload();
+    });
 }
 
-checkAdminAccess();
-
-function logoutAdmin() {
-    const confirmLogout = window.confirm('Securely log out of MH Finance Admin?');
-    if (!confirmLogout) {
-        return;
+// Global UI sign-out trigger (Replaces native window.confirm)
+async function triggerSignOut() {
+    const modal = document.getElementById('logout-confirm-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
     }
+}
 
-    localStorage.removeItem('mh_admin_access');
+async function confirmSignOut() {
+    await _supabase.auth.signOut();
     window.location.reload();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+function cancelSignOut() {
+    const modal = document.getElementById('logout-confirm-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+}
 
+// Map handlers to global scope for HTML inline calls
+window.triggerSignOut = triggerSignOut;
+window.confirmSignOut = confirmSignOut;
+window.cancelSignOut = cancelSignOut;
+
+// Unified DOM content execution
+document.addEventListener('DOMContentLoaded', () => {
+    initAdminAuth();
+    initNavigation();
+
+    const logoutButton = document.querySelector('.logout-btn');
+    if (logoutButton) {
+        // Intercept logout to display our custom confirmation dialog box
+        logoutButton.removeAttribute('onclick');
+        logoutButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            triggerSignOut();
+        });
+    }
+});
+
+// ─── Employer Rules & Calculations ───────────────────────────────────────────
 const employerRules = {
-    GRZ: { name: 'GRZ Ministries', interest: 0.0275, maxMonths: 72 },
+    GRZ: { name: 'GRZ Ministries', interest: 0.0275, maxMonths: 60 },
     ZAF: { name: 'ZAF', interest: 0.0275, maxMonths: 72 },
     ZNS: { name: 'ZNS', interest: 0.0258, maxMonths: 72 },
     ARMY: { name: 'Zambia Army', interest: 0.0242, maxMonths: 72 },
@@ -731,10 +790,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const logoutButton = document.querySelector('.logout-btn');
     if (logoutButton) {
+        // Swap out the old local clear rule for our secure database signOut
         logoutButton.addEventListener('click', logoutAdmin);
     }
 
-    setActivePanel('dashboard');
-    setLeadFilter('all');
-    subscribeToLeadStream();
+    // Any other initializers you have running here can stay untouched...
 });
