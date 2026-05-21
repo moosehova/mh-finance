@@ -220,11 +220,19 @@ function normalizeEmployerCode(value) {
 }
 
 function normalizeLead(rawLead, key) {
-    const employerCode = normalizeEmployerCode(rawLead.employer || rawLead.employerCode || rawLead.employerName);
+    // 1. Capture employer type matching your standard keys or script formats
+    const employerCode = normalizeEmployerCode(rawLead.employer || rawLead.employerCode || rawLead.employerName || rawLead.employer_tier);
     const employerRule = employerRules[employerCode] || employerRules.GRZ;
-    const months = Math.min(Number(rawLead.months) || employerRule.maxMonths, employerRule.maxMonths);
-    const loanAmount = Number(rawLead.loanAmount || rawLead.grossAmount) || 0;
-    const basicSalary = Number(rawLead.basicSalary || rawLead.salary) || 0;
+    
+    // 2. Safely accept both snake_case database columns and local CamelCase states
+    const name = rawLead.name || rawLead.client_name || 'Unknown Client';
+    const phone = rawLead.phone || rawLead.phone_number || '';
+    const nrc = rawLead.nrc || rawLead.nrc_number || '';
+    const loanAmount = Number(rawLead.loanAmount || rawLead.grossAmount || rawLead.loan_amount) || 0;
+    const basicSalary = Number(rawLead.basicSalary || rawLead.salary || rawLead.basic_salary) || 0;
+    const months = Math.min(Number(rawLead.months || rawLead.repayment_period) || employerRule.maxMonths, employerRule.maxMonths);
+
+    // Keep the calculation parameters exactly as you have them below:
     const monthlyRepayment = Number(rawLead.monthlyRepayment) || calculateMonthlyRepayment(loanAmount, months, employerRule.interest);
     const affordabilityLimit = Number(rawLead.affordabilityLimit) || (basicSalary * 0.4);
     const qualifies = typeof rawLead.qualifies === 'boolean'
@@ -235,9 +243,9 @@ function normalizeLead(rawLead, key) {
     return {
         firebaseKey: rawLead.firebaseKey || key || '',
         leadId: rawLead.leadId || `MHF-${String(key || Date.now()).slice(-8).toUpperCase()}`,
-        name: rawLead.name || 'Unknown Client',
-        phone: rawLead.phone || '',
-        nrc: rawLead.nrc || '',
+        name,
+        phone,
+        nrc,
         employer: employerCode,
         employerName: rawLead.employerName || employerRule.name,
         basicSalary,
@@ -245,7 +253,7 @@ function normalizeLead(rawLead, key) {
         months,
         status: rawLead.status || 'new',
         source: rawLead.source || 'Website Calculator',
-        createdAt: rawLead.createdAt || new Date(rawLead.timestamp || Date.now()).toISOString(),
+        createdAt: rawLead.createdAt || rawLead.created_at || new Date().toISOString(),
         missingDocs,
         monthlyRepayment,
         cashInHand: Number(rawLead.cashInHand) || calculateCashInHand(loanAmount),
