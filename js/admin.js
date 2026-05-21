@@ -1,5 +1,6 @@
 // ─── Secure Admin UI Auth (Zero Browser Popups!) ────────────────────────────
 
+a// ─── Secure Admin UI Auth (Zero Browser Popups!) ────────────────────────────
 async function initAdminAuth() {
     const overlay = document.getElementById('admin-login-overlay');
     const form = document.getElementById('admin-login-form');
@@ -12,18 +13,18 @@ async function initAdminAuth() {
     const { data: { session } } = await _supabase.auth.getSession();
 
     if (session) {
-        // User has a valid session! Leave the card hidden.
+        // User has a valid session! Ensure layout overlay stays hidden and CONTINUE execution
         console.log("Admin session authorized.");
-        return;
+        overlay.classList.add('hidden');
+        return; // This exits initAdminAuth quietly, allowing DOMContentLoaded to proceed to step 2!
     }
 
-    // NO ACTIVE SESSION: Reveal the modern login card to the user smoothly
+    // NO ACTIVE SESSION: Reveal the modern login card smoothly
     overlay.classList.remove('hidden');
-    overlay.classList.add('flex'); // Keeps your alignment layout beautiful
+    overlay.classList.add('flex'); 
 
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        // ... rest of your existing form submission code stays exactly the same
 
         const email = document.getElementById('login-email').value.trim();
         const password = document.getElementById('login-password').value;
@@ -41,7 +42,6 @@ async function initAdminAuth() {
         });
 
         if (error) {
-            // Render error message inside the page UI instead of an alert() popup
             feedbackBox.innerText = `❌ Access Denied: ${error.message}`;
             feedbackBox.classList.remove('hidden');
 
@@ -50,7 +50,7 @@ async function initAdminAuth() {
             return;
         }
 
-        // Authentication successful: Hide overlay card smoothly
+        // Authentication successful: Hide overlay card smoothly and reload to state hydrate
         overlay.classList.add('hidden');
         window.location.reload();
     });
