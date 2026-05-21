@@ -714,6 +714,17 @@ function openLeadPanel(leadId) {
     document.getElementById('lead-panel').classList.remove('hidden', 'translate-x-full');
     document.getElementById('lead-panel').classList.add('translate-x-0');
 }
+function recalculateLead(lead) {
+    const employerRule = employerRules[lead.employer] || employerRules.GRZ;
+    
+    // 1. Re-calculate based on current state values
+    lead.monthlyRepayment = calculateMonthlyRepayment(lead.loanAmount, lead.months, employerRule.interest);
+    lead.cashInHand = calculateCashInHand(lead.loanAmount);
+    lead.affordabilityLimit = (lead.basicSalary * 0.4);
+    lead.qualifies = lead.monthlyRepayment <= lead.affordabilityLimit;
+
+    return lead;
+}
 async function updateLeadField(field, newValue) {
     if (!currentLeadId) return;
 
@@ -737,20 +748,37 @@ async function updateLeadField(field, newValue) {
         console.log(`✅ ${field} updated to ${newValue}`);
     }
 }
-window.updateLeadField = updateLeadField;
+async function updateLeadField(field, newValue) {
+    if (!currentLeadId) return;
 
-function closeLeadPanel() {
-    const backdrop = document.getElementById('lead-panel-backdrop');
-    const panel = document.getElementById('lead-panel');
-    panel.classList.remove('translate-x-0');
-    panel.classList.add('translate-x-full');
-    setTimeout(() => {
-        panel.classList.add('hidden');
-        backdrop.classList.add('hidden');
-        currentLeadId = null;
-    }, 310);
+    const lead = leadsState.find((item) => item.leadId === currentLeadId);
+    if (!lead) return;
+
+    // 1. Update the field and RE-CALCULATE
+    lead[field] = Number(newValue) || newValue;
+    recalculateLead(lead); // 👈 THIS UPDATES THE MATH AUTOMATICALLY
+
+    // 2. Prepare the payload for Supabase
+    const updatePayload = {
+        [field]: lead[field],
+        monthly_repayment: lead.monthlyRepayment,
+        net_payout: lead.cashInHand
+    };
+
+    // 3. Sync to Supabase
+    const { error } = await _supabase
+        .from('mh_finance_leads')
+        .update(updatePayload)
+        .eq('id', lead.firebaseKey);
+
+    if (error) {
+        console.error("❌ Sync Error:", error);
+    } else {
+        console.log(`✅ ${field} and calculations synced to cloud.`);
+        // 4. Force panel refresh to show the new calculated numbers
+        openLeadPanel(currentLeadId); 
+    }
 }
-
 async function handleUpload(input, docType) {
     const file = input.files[0];
     const statusEl = document.getElementById(`status-${docType}`);
