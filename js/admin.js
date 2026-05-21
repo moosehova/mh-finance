@@ -614,26 +614,51 @@ function initNavigation() {
 }
 
 function subscribeToLeadStream() {
+    // 1. Load your local fallback array immediately so the screen isn't empty
     const localLeads = typeof getLocalLeads === 'function' ? getLocalLeads() : [];
     hydrateLeads(localLeads, localLeads.length ? 'Loaded from local backup' : 'Using sample leads');
 
-    const database = typeof getFirebaseDatabase === 'function' ? getFirebaseDatabase() : null;
-    if (!database || typeof FIREBASE_LEADS_PATH === 'undefined') {
-        setCloudStatus(localLeads.length ? 'Loaded from local backup' : 'Local fallback only');
+    if (typeof _supabase === 'undefined' || !_supabase) {
+        setCloudStatus('Supabase unavailable, running locally');
         return;
     }
 
-    firebaseLeadsRef = database.ref(FIREBASE_LEADS_PATH);
-    firebaseLeadsRef.on('value', (snapshot) => {
-        const value = snapshot.val() || {};
-        const firebaseLeads = Object.keys(value).map((key) => normalizeLead(value[key], key));
-        hydrateLeads(firebaseLeads, 'Firebase live sync active');
-    }, (error) => {
-        console.error('Firebase lead stream failed:', error);
-        setCloudStatus('Firebase unavailable, using local backup');
-    });
-}
+    // 2. Fetch all existing leads from Supabase when the dashboard first boots up
+    async function fetchInitialLeads() {
+        const { data, error } = await _supabase
+            .from('leads')
+            .select('*')
+            .order('created_at', { ascending: false });
 
+        if (!error && data) {
+            // Re-render your tables smoothly with the fresh cloud database rows
+            hydrateLeads(data, 'Supabase live pipeline connected');
+        } else {
+            console.error('Initial data fetch failed:', error);
+        }
+    }
+
+    fetchInitialLeads();
+
+    // 3. Keep a WebSocket channel wide open to listen for new mobile inserts instantly!
+    _supabase
+        .channel('public:leads')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, (payload) => {
+            console.log('✨ Live submission captured from mobile device:', payload.new);
+            
+            // Bring the new row data into your local UI state arrays seamlessly
+            const calibratedNewLead = normalizeLead(payload.new, payload.new.id || String(Date.now()));
+            leadsState.unshift(calibratedNewLead);
+            
+            // Update tables, counters, and charts across your screen instantly without a refresh
+            renderAll(); 
+        })
+        .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                setCloudStatus('Supabase Live Sync Active 🟢');
+            }
+        });
+}
 // ─── Lead Detail Panel ───────────────────────────────────────────────────────
 
 function openLeadPanel(leadId) {
@@ -785,14 +810,20 @@ window.downloadAllDocs = downloadAllDocs;
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Unified DOM content execution
 document.addEventListener('DOMContentLoaded', () => {
+    initAdminAuth();
     initNavigation();
+    
+    // START YOUR LIVE DATA STREAM INSTANTLY ON LOAD!
+    subscribeToLeadStream();
 
     const logoutButton = document.querySelector('.logout-btn');
     if (logoutButton) {
-        // Swap out the old local clear rule for our secure database signOut
-        logoutButton.addEventListener('click', logoutAdmin);
+        logoutButton.removeAttribute('onclick');
+        logoutButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            triggerSignOut();
+        });
     }
-
-    // Any other initializers you have running here can stay untouched...
 });

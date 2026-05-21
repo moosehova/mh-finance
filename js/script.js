@@ -287,29 +287,46 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function checkoutWhatsApp() {
-        if (!cart.length) {
-            return;
+    async function checkoutWhatsApp() {
+    // 1. Gather all your existing calculator values
+    const nameInput = document.getElementById('lead-name');
+    const phoneInput = document.getElementById('lead-phone');
+    const salaryInput = document.getElementById('lead-salary');
+    const nrcInput = document.getElementById('lead-nrc');
+    const employerSelect = document.getElementById('employer-select');
+    
+    if (!nameInput || !phoneInput || !nrcInput) return;
+
+    const leadData = {
+        client_name: nameInput.value.trim(),
+        phone_number: phoneInput.value.trim(),
+        nrc_number: nrcInput.value.trim(),
+        basic_salary: parseFloat(salaryInput.value) || 0,
+        employer_tier: employerSelect.value,
+        loan_amount: parseFloat(document.getElementById('calc-range').value) || 0,
+        repayment_period: parseInt(document.getElementById('calc-period').value) || 0,
+        project_scope: 'mh-finance', // Pinpoints this explicitly to your finance scope
+        created_at: new Date().toISOString()
+    };
+
+    // 2. Push the data directly to Supabase asynchronously
+    if (typeof _supabase !== 'undefined') {
+        try {
+            const { error } = await _supabase
+                .from('leads')
+                .insert([leadData]);
+                
+            if (error) console.error("Database insert failed:", error.message);
+        } catch (err) {
+            console.error("Network sync failure:", err);
         }
-
-        const whatsappNumber = typeof CONFIG !== 'undefined' && CONFIG.whatsapp
-            ? CONFIG.whatsapp
-            : 'YOUR_WIFES_NUMBER';
-
-        let message = '*MH FINANCE - LOAN MATCHING REQUEST*\n';
-        message += '--------------------------\n';
-
-        cart.forEach((item) => {
-            message += `Interested in: *${item.name}*\n`;
-            message += `Rate: ${item.price}\n`;
-            message += `Category: ${item.category}\n`;
-        });
-
-        message += '--------------------------\n';
-        message += 'Hello MH Finance, I saw these lender profiles on your portal. Based on my profile, please advise which one I qualify for and help me with the application.';
-
-        window.open(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`, '_blank', 'noopener');
     }
+
+    // 3. Keep your existing WhatsApp redirection intact right below it
+    const MH_WHATSAPP = "260975931621"; // Your WhatsApp Number
+    const message = `Hello MH Finance, I have used your calculator and would like to proceed with this application...`;
+    window.open('https://wa.me/' + MH_WHATSAPP + '?text=' + encodeURIComponent(message), '_blank', 'noopener');
+}
 
     function getCategories(items) {
         return ['All', ...new Set(items.map((item) => item.category).filter(Boolean))];
