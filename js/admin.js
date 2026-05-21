@@ -650,7 +650,10 @@ function subscribeToLeadStream() {
         })
         .subscribe((status) => {
             if (status === 'SUBSCRIBED') {
+                console.log('Supabase Live Sync Active 🟢'); // ADDED CONSOLE LOG
                 setCloudStatus('Supabase Live Sync Active 🟢');
+            } else {
+                console.log('Sync status changed:', status); // ADDED ERROR TRACKING
             }
         });
 }
