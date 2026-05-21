@@ -807,13 +807,19 @@ window.downloadAllDocs = downloadAllDocs;
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Unified DOM content execution
-document.addEventListener('DOMContentLoaded', () => {
-    initAdminAuth();
+// Ensure this master setup handles the initialization order perfectly
+document.addEventListener('DOMContentLoaded', async () => {
+    // 1. Kickstart your authentication interface check first
+    await initAdminAuth();
+    
+    // 2. Boot up your navigation event handlers
     initNavigation();
 
-    // START YOUR LIVE DATA STREAM INSTANTLY ON LOAD!
-    subscribeToLeadStream();
+    // 3. FORCE RE-RENDER AND ACTIVE LIVE WEBSOCKETS IMMEDIATELY!
+    if (typeof subscribeToLeadStream === 'function') {
+        console.log("Initializing live database channels...");
+        subscribeToLeadStream();
+    }
 
     const logoutButton = document.querySelector('.logout-btn');
     if (logoutButton) {
