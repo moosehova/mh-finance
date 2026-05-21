@@ -1,6 +1,4 @@
 // ─── Secure Admin UI Auth (Zero Browser Popups!) ────────────────────────────
-
-a// ─── Secure Admin UI Auth (Zero Browser Popups!) ────────────────────────────
 async function initAdminAuth() {
     const overlay = document.getElementById('admin-login-overlay');
     const form = document.getElementById('admin-login-form');
