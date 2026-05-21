@@ -96,8 +96,14 @@ function normalizePhoneNumber(value) {
 
 // ─── Asynchronous Supabase Insertion Loop ───────────────────────────────────
 async function checkoutWhatsApp() {
+    console.log("🛑 BUTTON CLICKED! Starting submission process...");
+
     const metrics = calculateLoanMetrics();
-    if (!metrics) return;
+    if (!metrics) {
+        console.error("❌ ABORTED: calculateLoanMetrics() returned null. Check your slider HTML IDs.");
+        return;
+    }
+    console.log("📊 Metrics calculated successfully:", metrics);
 
     const nameInput = document.getElementById('lead-name');
     const phoneInput = document.getElementById('lead-phone');
@@ -106,23 +112,28 @@ async function checkoutWhatsApp() {
 
     // Fields Form Validations
     if (!nameInput || !nameInput.value.trim()) {
+        console.error("❌ ABORTED: Name field is empty.");
         setLeadStatusMessage('❌ Enter the client full name before applying.', 'is-error');
         return;
     }
+    
     const cleanPhone = phoneInput ? normalizePhoneNumber(phoneInput.value) : '';
     if (!cleanPhone || cleanPhone.length < 12) {
+        console.error("❌ ABORTED: Phone number is too short or invalid.");
         setLeadStatusMessage('❌ Enter a valid Zambia mobile number before applying.', 'is-error');
         return;
     }
+    
     const basicSalary = parseFloat(salaryInput ? salaryInput.value : 0) || 0;
     if (basicSalary <= 0) {
+        console.error("❌ ABORTED: Basic salary is 0 or empty.");
         setLeadStatusMessage('❌ Enter the client basic salary before applying.', 'is-error');
         return;
     }
 
+    console.log("✅ Form validation passed. Building payload...");
     setLeadStatusMessage('⏳ Routing application data directly to secure pipelines...');
 
-    // Layout data strictly structured to match your mh_finance_leads columns
     const leadPayload = {
         client_name: nameInput.value.trim(),
         phone: cleanPhone,
@@ -137,20 +148,25 @@ async function checkoutWhatsApp() {
         created_at: new Date().toISOString()
     };
 
+    console.log("📦 Payload ready for database:", leadPayload);
+
     // Fire data payload off to your active Supabase Postgres cloud cluster
-    if (typeof _supabase !== 'undefined' && _supabase) {
+    if (typeof _supabase === 'undefined' || !_supabase) {
+        console.error("❌ CRITICAL ERROR: _supabase is completely undefined! Your config.js file might be missing or failing to load.");
+    } else {
+        console.log("🌐 Supabase connected. Attempting database insert...");
         try {
-            const { error } = await _supabase
+            const { data, error } = await _supabase
                 .from('mh_finance_leads')
                 .insert([leadPayload]);
 
             if (error) {
-                console.error("Database sync rejected payload:", error.message);
+                console.error("❌ Supabase Rejected the Insert:", error.message, error.details);
             } else {
-                console.log("✓ Application data secured globally.");
+                console.log("✓ SUCCESS! Application data secured globally.");
             }
         } catch (err) {
-            console.error("Network interface connection failure:", err);
+            console.error("❌ Network Interface Connection Failure:", err);
         }
     }
 
