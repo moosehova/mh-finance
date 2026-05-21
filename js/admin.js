@@ -19,7 +19,7 @@ async function initAdminAuth() {
 
     // NO ACTIVE SESSION: Reveal the modern login card smoothly
     overlay.classList.remove('hidden');
-    overlay.classList.add('flex'); 
+    overlay.classList.add('flex');
 
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -748,34 +748,116 @@ async function handleUpload(input, docType) {
     statusEl.className = 'mt-3 text-[9px] font-bold uppercase tracking-widest text-emerald-400';
     updateLeadDocStatus(currentLeadId, docType, data.path);
 }
-// ─── Delete Lead Pipeline ────────────────────────────────────────────────────
-async function deleteLead(leadId) {
-    // 1. Find the lead in our local state to get its true database ID
-    const lead = leadsState.find((item) => item.leadId === leadId);
-    if (!lead || !lead.firebaseKey) return; // Note: firebaseKey holds our Supabase UUID!
 
-    // 2. Ask for confirmation so you don't accidentally click it
-    const confirmDelete = confirm(`Are you sure you want to permanently delete the application for ${lead.name}?`);
-    if (!confirmDelete) return;
+// ─── Universal Modal System ─────────────────────────────────────────────────
+function showModal({ title, message, icon = 'warning', type = 'danger', confirmText = 'Confirm', cancelText = 'Cancel', onConfirm }) {
+    const modal = document.getElementById('universal-modal');
+    const content = document.getElementById('universal-modal-content');
+    const titleEl = document.getElementById('universal-modal-title');
+    const messageEl = document.getElementById('universal-modal-message');
+    const iconEl = document.getElementById('universal-modal-icon');
+    const iconContainer = document.getElementById('universal-modal-icon-container');
+    const btnContainer = document.getElementById('universal-modal-buttons');
 
-    // 3. Optimistic UI update: Remove it from the screen instantly for a snappy feel
-    leadsState = leadsState.filter((item) => item.leadId !== leadId);
-    renderAll();
+    if (!modal) return;
 
-    // 4. Send the kill command to the Supabase cloud
-    if (typeof _supabase !== 'undefined') {
-        const { error } = await _supabase
-            .from('mh_finance_leads')
-            .delete()
-            .eq('id', lead.firebaseKey); // Target the exact database row UUID
+    // Populate Content
+    titleEl.textContent = title;
+    messageEl.textContent = message;
+    iconEl.textContent = icon;
 
-        if (error) {
-            console.error("❌ Failed to delete from database:", error.message);
-            alert("Warning: Could not delete lead from the server. It may reappear on refresh.");
-        } else {
-            console.log(`🗑️ Successfully deleted lead: ${leadId}`);
-        }
+    // Style dynamically based on the type of notification
+    if (type === 'danger') {
+        iconContainer.className = 'inline-flex items-center justify-center w-12 h-12 bg-rose-500/10 text-rose-500 rounded-xl mb-4';
+        btnContainer.className = 'grid grid-cols-2 gap-3';
+        btnContainer.innerHTML = `
+            <button onclick="closeUniversalModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs uppercase tracking-wider py-3 rounded-xl transition-colors">
+                ${cancelText}
+            </button>
+            <button id="modal-confirm-btn" class="bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs uppercase tracking-wider py-3 rounded-xl transition-colors shadow-lg shadow-rose-500/10">
+                ${confirmText}
+            </button>
+        `;
+    } else if (type === 'info') {
+        iconContainer.className = 'inline-flex items-center justify-center w-12 h-12 bg-sky-500/10 text-sky-500 rounded-xl mb-4';
+        btnContainer.className = 'grid grid-cols-1';
+        btnContainer.innerHTML = `
+            <button onclick="closeUniversalModal()" class="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs uppercase tracking-wider py-3 rounded-xl transition-colors">
+                Close
+            </button>
+        `;
     }
+
+    // Bind Confirm Action if one was provided
+    const confirmBtn = document.getElementById('modal-confirm-btn');
+    if (confirmBtn && onConfirm) {
+        confirmBtn.onclick = () => {
+            closeUniversalModal();
+            onConfirm();
+        };
+    }
+
+    // Animate In
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    requestAnimationFrame(() => {
+        content.classList.remove('scale-95', 'opacity-0');
+        content.classList.add('scale-100', 'opacity-100');
+    });
+}
+
+function closeUniversalModal() {
+    const modal = document.getElementById('universal-modal');
+    const content = document.getElementById('universal-modal-content');
+
+    content.classList.remove('scale-100', 'opacity-100');
+    content.classList.add('scale-95', 'opacity-0');
+
+    setTimeout(() => {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }, 200); // Matches the Tailwind transition duration
+}
+
+window.closeUniversalModal = closeUniversalModal;
+
+// ─── Delete Lead Pipeline (Upgraded to Custom UI) ───────────────────────────
+async function deleteLead(leadId) {
+    const lead = leadsState.find((item) => item.leadId === leadId);
+    if (!lead || !lead.firebaseKey) return;
+
+    // Fire the custom, branded modal!
+    showModal({
+        title: 'Delete Application',
+        message: `Are you sure you want to permanently delete the application for ${lead.name}? This action cannot be undone.`,
+        icon: 'delete_forever',
+        type: 'danger',
+        confirmText: 'Delete Lead',
+        onConfirm: async () => {
+            // 1. Instantly remove from screen
+            leadsState = leadsState.filter((item) => item.leadId !== leadId);
+            renderAll();
+
+            // 2. Tell Supabase to delete the row
+            if (typeof _supabase !== 'undefined') {
+                const { error } = await _supabase
+                    .from('mh_finance_leads')
+                    .delete()
+                    .eq('id', lead.firebaseKey);
+
+                if (error) {
+                    console.error("❌ Failed to delete:", error.message);
+                    // We can even use our new modal to show errors!
+                    showModal({
+                        title: 'Database Error',
+                        message: 'Could not delete lead from the server. It may reappear on refresh.',
+                        icon: 'error',
+                        type: 'info' // Creates an 'OK' only button style
+                    });
+                }
+            }
+        }
+    });
 }
 
 function updateLeadDocStatus(leadId, docType, filePath) {
@@ -846,7 +928,7 @@ window.downloadAllDocs = downloadAllDocs;
 document.addEventListener('DOMContentLoaded', async () => {
     // 1. Kickstart your authentication interface check first
     await initAdminAuth();
-    
+
     // 2. Boot up your navigation event handlers
     initNavigation();
 

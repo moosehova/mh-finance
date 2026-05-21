@@ -411,7 +411,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="js/config.js"></script>
-    <script src="js/admin.js?v=1.0.5"></script>
+    <script src="js/admin.js?v=1.0.8"></script>
     <div id="logout-confirm-modal"
         class="hidden fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-sm items-center justify-center p-4">
         <div class="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl text-center">
@@ -431,6 +431,17 @@
                     Sign Out
                 </button>
             </div>
+        </div>
+    </div>
+    <div id="universal-modal" class="hidden fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-sm items-center justify-center p-4">
+        <div id="universal-modal-content" class="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl text-center transform scale-95 opacity-0 transition-all duration-200">
+            <div id="universal-modal-icon-container" class="inline-flex items-center justify-center w-12 h-12 bg-rose-500/10 text-rose-500 rounded-xl mb-4">
+                <span id="universal-modal-icon" class="material-icons-round text-2xl">warning</span>
+            </div>
+            <h3 id="universal-modal-title" class="text-lg font-bold text-white mb-2">Title</h3>
+            <p id="universal-modal-message" class="text-slate-400 text-xs mb-6 leading-relaxed">Message text goes here.</p>
+            <div class="grid gap-3" id="universal-modal-buttons">
+                </div>
         </div>
     </div>
 </body>
