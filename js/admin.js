@@ -670,22 +670,37 @@ function openLeadPanel(leadId) {
 
     currentLeadId = leadId;
 
+    // Helper for creating inputs
+    const input = (field, value, type = 'text', classes = '') => 
+        `<input type="${type}" value="${value}" 
+        class="bg-slate-950 border-b border-slate-700 w-full focus:border-amber-500 outline-none p-1 text-white ${classes}" 
+        onblur="updateLeadField('${field}', this.value)">`;
+
     document.getElementById('panel-lead-id').textContent = lead.leadId;
-    document.getElementById('panel-client-name').textContent = lead.name;
-    document.getElementById('panel-client-employer').textContent = `${lead.employerName} \u2022 ${lead.months} months`;
-    document.getElementById('panel-payout').textContent = formatCurrency(lead.cashInHand);
+
+    // Editable Name & Phone
+    document.getElementById('panel-client-name').innerHTML = input('client_name', lead.name);
+    document.getElementById('panel-phone').innerHTML = input('phone', lead.phone);
+    
+    // Editable Loan Amount & Salary
+    // Note: We use the actual keys from your Supabase table
+    document.getElementById('panel-payout').innerHTML = input('loan_amount', lead.loanAmount, 'number', 'text-amber-400 font-black');
+    
+    // Static fields (Formatted)
     document.getElementById('panel-repayment').textContent = formatCurrency(lead.monthlyRepayment);
+    document.getElementById('panel-client-employer').textContent = `${lead.employerName} \u2022 ${lead.months} months`;
 
     const affordEl = document.getElementById('panel-affordability');
     affordEl.textContent = formatCurrency(lead.affordabilityLimit);
     affordEl.className = `text-base font-black mt-2 ${lead.qualifies ? 'text-emerald-400' : 'text-rose-400'}`;
 
-    document.getElementById('panel-phone').textContent = `+${lead.phone || 'N/A'}`;
-    document.getElementById('panel-nrc').textContent = lead.nrc ? `NRC ${lead.nrc}` : 'NRC not captured';
+    document.getElementById('panel-nrc').innerHTML = input('nrc_number', lead.nrc);
 
+    // Document status and WhatsApp button logic stays the same...
     const waBtn = document.getElementById('panel-whatsapp-btn');
     if (waBtn) waBtn.onclick = () => openWhatsApp(leadId);
 
+    // ... (Your existing forEach doc loop)
     ['nrc', 'payslips', 'statement', 'employer-letter'].forEach((docType) => {
         const el = document.getElementById(`status-${docType}`);
         if (!el) return;
@@ -694,15 +709,35 @@ function openLeadPanel(leadId) {
         el.className = `mt-3 text-[9px] font-bold uppercase tracking-widest ${secured ? 'text-emerald-400' : 'text-slate-600'}`;
     });
 
-    const backdrop = document.getElementById('lead-panel-backdrop');
-    const panel = document.getElementById('lead-panel');
-    backdrop.classList.remove('hidden');
-    panel.classList.remove('hidden');
-    requestAnimationFrame(() => {
-        panel.classList.remove('translate-x-full');
-        panel.classList.add('translate-x-0');
-    });
+    // Animate
+    document.getElementById('lead-panel-backdrop').classList.remove('hidden');
+    document.getElementById('lead-panel').classList.remove('hidden', 'translate-x-full');
+    document.getElementById('lead-panel').classList.add('translate-x-0');
 }
+async function updateLeadField(field, newValue) {
+    if (!currentLeadId) return;
+
+    const lead = leadsState.find((item) => item.leadId === currentLeadId);
+    if (!lead) return;
+
+    // 1. Update Local State
+    lead[field] = newValue;
+    persistLead(lead);
+
+    // 2. Sync to Supabase
+    const { error } = await _supabase
+        .from('mh_finance_leads')
+        .update({ [field]: newValue })
+        .eq('id', lead.firebaseKey);
+
+    if (error) {
+        console.error("❌ Sync Error:", error);
+        showModal({ title: 'Sync Failed', message: 'Could not save changes to the cloud.', type: 'danger' });
+    } else {
+        console.log(`✅ ${field} updated to ${newValue}`);
+    }
+}
+window.updateLeadField = updateLeadField;
 
 function closeLeadPanel() {
     const backdrop = document.getElementById('lead-panel-backdrop');
