@@ -10,7 +10,7 @@ async function initAdminAuth() {
 
     // Direct token check using our Supabase client instance
     const { data: { session } } = await _supabase.auth.getSession();
-    
+
     if (session) {
         // User has a valid session! Leave the card hidden.
         console.log("Admin session authorized.");
@@ -220,46 +220,42 @@ function normalizeEmployerCode(value) {
 }
 
 function normalizeLead(rawLead, key) {
-    // 1. Capture employer type matching your standard keys or script formats
-    const employerCode = normalizeEmployerCode(rawLead.employer || rawLead.employerCode || rawLead.employerName || rawLead.employer_tier);
+    const employerCode = normalizeEmployerCode(rawLead.employer || 'GRZ');
     const employerRule = employerRules[employerCode] || employerRules.GRZ;
-    
-    // 2. Safely accept both snake_case database columns and local CamelCase states
-    const name = rawLead.name || rawLead.client_name || 'Unknown Client';
-    const phone = rawLead.phone || rawLead.phone_number || '';
-    const nrc = rawLead.nrc || rawLead.nrc_number || '';
-    const loanAmount = Number(rawLead.loanAmount || rawLead.grossAmount || rawLead.loan_amount) || 0;
-    const basicSalary = Number(rawLead.basicSalary || rawLead.salary || rawLead.basic_salary) || 0;
-    const months = Math.min(Number(rawLead.months || rawLead.repayment_period) || employerRule.maxMonths, employerRule.maxMonths);
 
-    // Keep the calculation parameters exactly as you have them below:
-    const monthlyRepayment = Number(rawLead.monthlyRepayment) || calculateMonthlyRepayment(loanAmount, months, employerRule.interest);
-    const affordabilityLimit = Number(rawLead.affordabilityLimit) || (basicSalary * 0.4);
-    const qualifies = typeof rawLead.qualifies === 'boolean'
-        ? rawLead.qualifies
-        : (basicSalary > 0 ? monthlyRepayment <= affordabilityLimit : false);
+    // Safely parse properties directly out of your real schema layout
+    const name = rawLead.client_name || rawLead.name || 'Unknown Client';
+    const phone = rawLead.phone || '';
+    const nrc = rawLead.nrc_number || rawLead.nrc || '';
+    const loanAmount = Number(rawLead.loan_amount || rawLead.loanAmount) || 0;
+    const basicSalary = Number(rawLead.salary || rawLead.basicSalary) || 0;
+    const months = Math.min(Number(rawLead.months) || employerRule.maxMonths, employerRule.maxMonths);
+
+    const monthlyRepayment = Number(rawLead.monthly_repayment) || calculateMonthlyRepayment(loanAmount, months, employerRule.interest);
+    const affordabilityLimit = (basicSalary * 0.4);
+    const qualifies = basicSalary > 0 ? monthlyRepayment <= affordabilityLimit : false;
     const missingDocs = Array.isArray(rawLead.missingDocs) ? rawLead.missingDocs : [];
 
     return {
-        firebaseKey: rawLead.firebaseKey || key || '',
-        leadId: rawLead.leadId || `MHF-${String(key || Date.now()).slice(-8).toUpperCase()}`,
+        firebaseKey: key || '',
+        leadId: rawLead.id && rawLead.id.length > 8 ? `MHF-${rawLead.id.slice(0, 6).toUpperCase()}` : `MHF-${String(key).slice(-6).toUpperCase()}`,
         name,
         phone,
         nrc,
         employer: employerCode,
-        employerName: rawLead.employerName || employerRule.name,
+        employerName: employerRule.name,
         basicSalary,
         loanAmount,
         months,
-        status: rawLead.status || 'new',
-        source: rawLead.source || 'Website Calculator',
-        createdAt: rawLead.createdAt || rawLead.created_at || new Date().toISOString(),
+        status: String(rawLead.status || 'new').toLowerCase(),
+        source: 'Website Calculator',
+        createdAt: rawLead.created_at || new Date().toISOString(),
         missingDocs,
         monthlyRepayment,
-        cashInHand: Number(rawLead.cashInHand) || calculateCashInHand(loanAmount),
+        cashInHand: Number(rawLead.net_payout) || calculateCashInHand(loanAmount),
         affordabilityLimit,
         qualifies,
-        documentPaths: (typeof rawLead.documentPaths === 'object' && rawLead.documentPaths !== null) ? rawLead.documentPaths : {}
+        documentPaths: typeof rawLead.client_docs === 'object' ? rawLead.client_docs : {}
     };
 }
 
@@ -622,7 +618,6 @@ function initNavigation() {
 }
 
 function subscribeToLeadStream() {
-    // 1. Load your local fallback array immediately so the screen isn't empty
     const localLeads = typeof getLocalLeads === 'function' ? getLocalLeads() : [];
     hydrateLeads(localLeads, localLeads.length ? 'Loaded from local backup' : 'Using sample leads');
 
@@ -631,15 +626,13 @@ function subscribeToLeadStream() {
         return;
     }
 
-    // 2. Fetch all existing leads from Supabase when the dashboard first boots up
     async function fetchInitialLeads() {
         const { data, error } = await _supabase
-            .from('leads')
+            .from('mh_finance_leads') // Corrected Table Target!
             .select('*')
             .order('created_at', { ascending: false });
 
         if (!error && data) {
-            // Re-render your tables smoothly with the fresh cloud database rows
             hydrateLeads(data, 'Supabase live pipeline connected');
         } else {
             console.error('Initial data fetch failed:', error);
@@ -648,18 +641,14 @@ function subscribeToLeadStream() {
 
     fetchInitialLeads();
 
-    // 3. Keep a WebSocket channel wide open to listen for new mobile inserts instantly!
     _supabase
-        .channel('public:leads')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, (payload) => {
+        .channel('public:mh_finance_leads')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mh_finance_leads' }, (payload) => {
             console.log('✨ Live submission captured from mobile device:', payload.new);
-            
-            // Bring the new row data into your local UI state arrays seamlessly
+
             const calibratedNewLead = normalizeLead(payload.new, payload.new.id || String(Date.now()));
             leadsState.unshift(calibratedNewLead);
-            
-            // Update tables, counters, and charts across your screen instantly without a refresh
-            renderAll(); 
+            renderAll();
         })
         .subscribe((status) => {
             if (status === 'SUBSCRIBED') {
@@ -822,7 +811,7 @@ window.downloadAllDocs = downloadAllDocs;
 document.addEventListener('DOMContentLoaded', () => {
     initAdminAuth();
     initNavigation();
-    
+
     // START YOUR LIVE DATA STREAM INSTANTLY ON LOAD!
     subscribeToLeadStream();
 

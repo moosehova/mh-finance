@@ -31,7 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
             specs = typeof product.specs === 'object' && product.specs !== null
                 ? product.specs
                 : JSON.parse(product.specs || '{}');
-        } catch (_) {}
+        } catch (_) { }
         return {
             id: product.id,
             name: product.name || 'Unnamed Package',
@@ -288,45 +288,43 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function checkoutWhatsApp() {
-    // 1. Gather all your existing calculator values
-    const nameInput = document.getElementById('lead-name');
-    const phoneInput = document.getElementById('lead-phone');
-    const salaryInput = document.getElementById('lead-salary');
-    const nrcInput = document.getElementById('lead-nrc');
-    const employerSelect = document.getElementById('employer-select');
-    
-    if (!nameInput || !phoneInput || !nrcInput) return;
+        const nameInput = document.getElementById('lead-name');
+        const phoneInput = document.getElementById('lead-phone');
+        const salaryInput = document.getElementById('lead-salary');
+        const nrcInput = document.getElementById('lead-nrc');
+        const employerSelect = document.getElementById('employer-select');
 
-    const leadData = {
-        client_name: nameInput.value.trim(),
-        phone_number: phoneInput.value.trim(),
-        nrc_number: nrcInput.value.trim(),
-        basic_salary: parseFloat(salaryInput.value) || 0,
-        employer_tier: employerSelect.value,
-        loan_amount: parseFloat(document.getElementById('calc-range').value) || 0,
-        repayment_period: parseInt(document.getElementById('calc-period').value) || 0,
-        project_scope: 'mh-finance', // Pinpoints this explicitly to your finance scope
-        created_at: new Date().toISOString()
-    };
+        if (!nameInput || !phoneInput || !nrcInput) return;
 
-    // 2. Push the data directly to Supabase asynchronously
-    if (typeof _supabase !== 'undefined') {
-        try {
-            const { error } = await _supabase
-                .from('leads')
-                .insert([leadData]);
-                
-            if (error) console.error("Database insert failed:", error.message);
-        } catch (err) {
-            console.error("Network sync failure:", err);
+        // Mapping fields exactly to your mh_finance_leads schema columns
+        const leadData = {
+            client_name: nameInput.value.trim(),
+            phone: phoneInput.value.trim(),
+            nrc_number: nrcInput.value.trim(),
+            employer: employerSelect.value,
+            salary: parseFloat(salaryInput.value) || 0,
+            loan_amount: parseFloat(document.getElementById('calc-range').value) || 0,
+            months: parseInt(document.getElementById('calc-period').value) || 0,
+            status: 'New',
+            created_at: new Date().toISOString()
+        };
+
+        if (typeof _supabase !== 'undefined') {
+            try {
+                const { error } = await _supabase
+                    .from('mh_finance_leads') // Corrected Table Name!
+                    .insert([leadData]);
+
+                if (error) console.error("Database insert failed:", error.message);
+            } catch (err) {
+                console.error("Network sync failure:", err);
+            }
         }
-    }
 
-    // 3. Keep your existing WhatsApp redirection intact right below it
-    const MH_WHATSAPP = "260975931621"; // Your WhatsApp Number
-    const message = `Hello MH Finance, I have used your calculator and would like to proceed with this application...`;
-    window.open('https://wa.me/' + MH_WHATSAPP + '?text=' + encodeURIComponent(message), '_blank', 'noopener');
-}
+        const MH_WHATSAPP = "260975931621";
+        const message = `Hello MH Finance, I have used your calculator and would like to proceed with this application...`;
+        window.open('https://wa.me/' + MH_WHATSAPP + '?text=' + encodeURIComponent(message), '_blank', 'noopener');
+    }
 
     function getCategories(items) {
         return ['All', ...new Set(items.map((item) => item.category).filter(Boolean))];
@@ -591,7 +589,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Make syncCalculator available globally for product card clicks
-    window.syncCalculator = function(lenderValue) {
+    window.syncCalculator = function (lenderValue) {
         if (!failsafeLenderSelect) {
             console.error('❌ syncCalculator: lender-select not found');
             return;
@@ -609,13 +607,13 @@ document.addEventListener('DOMContentLoaded', () => {
 // Rates from Loan Tools All Employers spreadsheet
 // =====================================================
 
-var MH_WHATSAPP  = (typeof CONFIG !== 'undefined' && CONFIG.whatsapp) ? CONFIG.whatsapp : '260975931621';
-var MH_ADMIN_RATE  = 0.01;
+var MH_WHATSAPP = (typeof CONFIG !== 'undefined' && CONFIG.whatsapp) ? CONFIG.whatsapp : '260975931621';
+var MH_ADMIN_RATE = 0.01;
 var MH_ARRANGEMENT = 0.045;
-var MH_INSURANCE   = 0.04;
-var MH_PROCESSING  = 0.025;
-var MH_INS_LEVY    = 0.03;
-var MH_CRB         = 35;
+var MH_INSURANCE = 0.04;
+var MH_PROCESSING = 0.025;
+var MH_INS_LEVY = 0.03;
+var MH_CRB = 35;
 
 function formatLeadCurrency(value) {
     return 'K' + Math.round(value || 0).toLocaleString();
@@ -716,7 +714,7 @@ function generateLeadId() {
 
 function upsertLocalLead(record) {
     var currentLeads = typeof getLocalLeads === 'function' ? getLocalLeads() : [];
-    var nextLeads = [record].concat(currentLeads.filter(function(existingLead) {
+    var nextLeads = [record].concat(currentLeads.filter(function (existingLead) {
         return existingLead.leadId !== record.leadId;
     }));
 
@@ -836,7 +834,7 @@ async function checkoutWhatsApp() {
 
 window.checkoutWhatsApp = checkoutWhatsApp;
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     var amountSlider = document.getElementById('calc-range');
     var periodSlider = document.getElementById('calc-period');
     var employerSelect = document.getElementById('employer-select');
@@ -846,10 +844,10 @@ document.addEventListener('DOMContentLoaded', function() {
     if (periodSlider) periodSlider.addEventListener('input', calculateLoan);
     if (employerSelect) employerSelect.addEventListener('change', calculateLoan);
 
-    leadInputs.forEach(function(inputId) {
+    leadInputs.forEach(function (inputId) {
         var input = document.getElementById(inputId);
         if (input) {
-            input.addEventListener('input', function() {
+            input.addEventListener('input', function () {
                 setLeadStatusMessage('');
             });
         }
