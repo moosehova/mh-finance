@@ -399,11 +399,15 @@ function renderLeadTable() {
                 <p class="text-xs ${lead.qualifies ? 'text-slate-500' : 'text-rose-300'} mt-1">40% cap ${formatCurrency(lead.affordabilityLimit)}</p>
             </td>
             <td class="p-6 align-top">${getStatusMarkup(lead)}</td>
-            <td class="p-6 align-top text-right">
+            <<td class="p-6 align-top text-right">
                 <div class="flex justify-end gap-2 flex-wrap">
                     <button class="view-lead rounded-full border border-amber-500/50 bg-amber-500/10 px-4 py-2 text-[10px] uppercase tracking-widest font-black text-amber-400 hover:bg-amber-500 hover:text-slate-900 transition-all" data-lead-id="${lead.leadId}">View File</button>
+                    
                     <button class="contact-lead rounded-full border border-slate-700 px-4 py-2 text-[10px] uppercase tracking-widest font-black text-white hover:border-amber-500 hover:text-amber-400 transition-all" data-lead-id="${lead.leadId}">WhatsApp</button>
+                    
                     <button class="cycle-status rounded-full border border-slate-700 px-4 py-2 text-[10px] uppercase tracking-widest font-black text-slate-400 hover:text-white transition-all" data-lead-id="${lead.leadId}">Advance</button>
+                    
+                    <button class="delete-lead rounded-full border border-rose-500/50 bg-rose-500/10 px-4 py-2 text-[10px] uppercase tracking-widest font-black text-rose-400 hover:bg-rose-500 hover:text-white transition-all" data-lead-id="${lead.leadId}">Delete</button>
                 </div>
             </td>
         </tr>
