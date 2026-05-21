@@ -561,6 +561,10 @@ function bindRowActions() {
     document.querySelectorAll('.cycle-status').forEach((button) => {
         button.onclick = () => advanceStatus(button.dataset.leadId);
     });
+
+    document.querySelectorAll('.delete-lead').forEach((button) => {
+        button.onclick = () => deleteLead(button.dataset.leadId);
+    });
 }
 
 function setActivePanel(view) {
@@ -742,6 +746,35 @@ async function handleUpload(input, docType) {
     statusEl.textContent = 'Document Secured';
     statusEl.className = 'mt-3 text-[9px] font-bold uppercase tracking-widest text-emerald-400';
     updateLeadDocStatus(currentLeadId, docType, data.path);
+}
+// ─── Delete Lead Pipeline ────────────────────────────────────────────────────
+async function deleteLead(leadId) {
+    // 1. Find the lead in our local state to get its true database ID
+    const lead = leadsState.find((item) => item.leadId === leadId);
+    if (!lead || !lead.firebaseKey) return; // Note: firebaseKey holds our Supabase UUID!
+
+    // 2. Ask for confirmation so you don't accidentally click it
+    const confirmDelete = confirm(`Are you sure you want to permanently delete the application for ${lead.name}?`);
+    if (!confirmDelete) return;
+
+    // 3. Optimistic UI update: Remove it from the screen instantly for a snappy feel
+    leadsState = leadsState.filter((item) => item.leadId !== leadId);
+    renderAll();
+
+    // 4. Send the kill command to the Supabase cloud
+    if (typeof _supabase !== 'undefined') {
+        const { error } = await _supabase
+            .from('mh_finance_leads')
+            .delete()
+            .eq('id', lead.firebaseKey); // Target the exact database row UUID
+
+        if (error) {
+            console.error("❌ Failed to delete from database:", error.message);
+            alert("Warning: Could not delete lead from the server. It may reappear on refresh.");
+        } else {
+            console.log(`🗑️ Successfully deleted lead: ${leadId}`);
+        }
+    }
 }
 
 function updateLeadDocStatus(leadId, docType, filePath) {
